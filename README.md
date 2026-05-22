@@ -34,19 +34,6 @@ Le modèle de reconnaissance produit un vecteur numérique (embedding) pour chaq
 
 Les images ne sont pas incluses dans ce dépôt.
 
----
-
-## Application Android
-
-L'APK est dans `android/`. Elle permet de :
-- Identifier un individu connu depuis une photo ou la caméra en temps réel
-- Détecter les individus inconnus (seuil cosinus : 0,49)
-- Mettre à jour le modèle de reconnaissance sans recompiler l'app (remplacer le JSON)
-
-La fonction "analyser vidéo" est disponible sur PC uniquement pour l'instant.
-
----
-
 ## Modèles utilisés
 
 - **Détection** : YOLOv8, fine-tuné sur ~500 images annotées manuellement
