@@ -36,5 +36,5 @@ Les images ne sont pas incluses dans ce dépôt.
 
 ## Modèles utilisés
 
-- **Détection** : YOLOv8, fine-tuné sur ~500 images annotées manuellement
+- **Détection** : YOLOv8, fine-tuné sur ~500 images annotées manuellement, puis réentrainé avec les 2 217 photos annotées manuellement.
 - **Identification** : ResNet50, fine-tuné avec une loss par embeddings sur les 10 individus connus
