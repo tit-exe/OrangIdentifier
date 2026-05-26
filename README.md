@@ -137,7 +137,7 @@ python models/download_models.py --version all
 | `megadesc_T_arcface_final_epoch21_acc99.pt` | V3 | 105 MB | ArcFace, 10 individuals |
 | `megadesc_T_arcface_v4_40individus_acc99.pt` | **V4** | 105 MB | ArcFace, 40 individuals |
 
-Hosted at [huggingface](link)
+Hosted at [HuggingFace — tit0000/OrangIdentifier](https://huggingface.co/tit0000/OrangIdentifier)
 
 ---
 

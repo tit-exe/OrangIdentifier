@@ -31,7 +31,7 @@ except ImportError:
 # TODO: remplacer "titouane-iphc" par votre nom d'utilisateur HuggingFace
 # après avoir uploadé les modèles sur https://huggingface.co
 
-REPO_ID = "titouane-iphc/orangutan-identifier"
+REPO_ID = "tit0000/OrangIdentifier"
 
 MODELS = {
     "yolo_v1": {
