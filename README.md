@@ -14,6 +14,15 @@ This pipeline produces an Android app that runs **entirely offline** and returns
 
 ---
 
+## Demo
+
+![OrangIdentifier demo — real-time individual identification](assets/demo.gif)
+
+> V1 pipeline · YOLO face detection + ResNet50 identification · running offline on laptop.  
+> Processing a 1 min 30 sec field video takes approximately 2 minutes on an RTX 3050 (YOLO detection + embedding extraction + identity matching).
+
+---
+
 ## Inference pipeline
 
 ```mermaid
