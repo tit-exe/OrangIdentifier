@@ -3,7 +3,6 @@
 **Individual facial recognition for Bornean orangutans** — end-to-end pipeline from raw photographs to offline Android deployment.
 
 > CNRS IPHC Strasbourg · BOS Foundation Borneo · May 2026  
-> Supervisor: Cédric Sueur
 
 ---
 
@@ -129,7 +128,7 @@ python models/download_models.py --version all
 | `megadesc_T_arcface_final_epoch21_acc99.pt` | V3 | 105 MB | ArcFace, 10 individuals |
 | `megadesc_T_arcface_v4_40individus_acc99.pt` | **V4** | 105 MB | ArcFace, 40 individuals |
 
-Hosted at [huggingface.co/titouane-iphc/orangutan-identifier](https://huggingface.co/titouane-iphc/orangutan-identifier)
+Hosted at [huggingface](link)
 
 ---
 
@@ -225,5 +224,3 @@ Otarashvili et al. (2024). *MiewID: Open-source Wildlife Re-identification.* Con
 Ultralytics (2023). *YOLOv8: A new state-of-the-art real-time object detector.*
 
 ---
-
-*CNRS IPHC Strasbourg — Institut Pluridisciplinaire Hubert Curien*
