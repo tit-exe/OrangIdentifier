@@ -1,0 +1,38 @@
+# config.yaml — adapter ces valeurs pour un nouveau projet
+# ============================================================
+# Pour utiliser sur une autre espèce : changer species, les chemins,
+# et lancer les scripts dans l'ordre indiqué dans PIPELINE.md
+
+# --- Projet ---
+species:      "Pongo pygmaeus"          # espèce (pour les logs)
+project_name: "orangutan_borneo"        # nom du projet
+
+# --- Chemins (adapter à votre machine) ---
+# Mettre des chemins absolus ou relatifs au dossier du projet
+raw_photos_dir:   "data/photos"         # dossiers = 1 individu par dossier
+wild_images_dir:  "data/wild_internet"  # images internet non labelisées
+output_dir:       "output"              # crops, modèles, résultats
+
+# --- GPU & performance ---
+device:       "auto"      # auto | cuda | cpu
+batch_size:   32          # réduire à 16 si VRAM < 4 GB
+
+# --- Cache (évite de remplir C:) ---
+hf_cache_dir:   "D:/HuggingFaceCache"   # modèles HuggingFace
+torch_cache_dir: "D:/TorchCache"        # modèles PyTorch
+
+# --- YOLO (détection de visages) ---
+yolo_confidence:  0.30    # seuil de confiance détection
+yolo_face_margin: 0.15    # marge autour du crop (15%)
+
+# --- MegaDescriptor + ArcFace (V3/V4) ---
+arc_scale:    64
+arc_margin:   0.50
+max_epochs:   100
+patience:     25
+patience_start: 35        # early stopping commence à partir de cette epoch
+lr_backbone:  1e-5
+lr_head:      5e-4
+
+# --- Galerie open-set ---
+unknown_threshold: 0.22   # similarité cosinus sous laquelle = inconnu
