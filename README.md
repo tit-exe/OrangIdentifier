@@ -10,7 +10,7 @@ This pipeline trains a face detector and an individual identification model from
 
 The gallery can be loaded into any app (Android, desktop, embedded). Adding a new individual requires 10–20 photos, takes under a minute, and requires no retraining.
 
-> **Android app** → separate repository: [tit0000/OrangIdentifier-Android](https://github.com/tit0000/OrangIdentifier-Android) *(coming soon)*
+> **Android app** → separate repository: https://github.com/tit-exe/OrangIdentifier_AndroidApp
 
 ---
 
