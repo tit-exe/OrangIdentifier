@@ -1,9 +1,9 @@
 # V3_visualize_model.py
-# CNRS IPHC Strasbourg - Orang-outan V2 pipeline
-# Author: Titouane
+# Orang-outan V2 pipeline
+# 
 #
 # Comprehensive visual diagnostic of the current model.
-# Generates multiple PNG files in D:\OrangIdentifier\V2\V3\reports\
+# Generates multiple PNG files in output/v3_reports/
 #
 # What it produces:
 #   1. umap_embedding_space.png  - 2D map of ALL individuals (zoo + BOS + wild)
@@ -13,9 +13,23 @@
 #   5. wild_crops_rejection.png  - how wild internet crops are handled
 #
 # RUN:
-#   conda activate orangs
+#   conda activate wildlife-id
 #   pip install umap-learn --break-system-packages  (if not installed)
-#   python D:\OrangIdentifier\V2\scripts\V3_visualize_model.py
+#   python v3_megadesc_arcface_10ind/07_visualize.py
+
+import sys
+from pathlib import Path as _Path
+sys.path.insert(0, str(_Path(__file__).parent.parent))
+from common.config_loader import (
+    apply_cache_env,
+    PHOTOS_DIR, WILD_IMAGES_DIR, CROPS_KNOWN_DIR, CROPS_WILD_DIR, CROPS_JSON,
+    MODELS_DIR, OUTPUT_DIR, YOLO_V2_PT,
+    V3_PT, V4_PT, UNKNOWN_THRESHOLD,
+    ARC_SCALE, ARC_MARGIN, MAX_EPOCHS, PATIENCE, PATIENCE_START,
+    LR_BACKBONE, LR_HEAD, BATCH_SIZE, DEVICE, ensure_dirs, to_relative,
+)
+apply_cache_env()  # sets HF_HOME/TORCH_HOME before any heavy imports
+
 
 import os
 import sys
@@ -27,8 +41,8 @@ from pathlib import Path
 from datetime import datetime
 from collections import defaultdict
 
-os.environ["HF_HOME"]    = r"D:\HuggingFaceCache"
-os.environ["TORCH_HOME"] = r"D:\TorchCache"
+
+
 
 import numpy as np
 import torch
@@ -49,11 +63,11 @@ import matplotlib.colors as mcolors
 # PATHS
 # ==============================================================================
 
-MODEL_PATH  = Path(r"D:\OrangIdentifier\V2\MODELS\megadesc_T_arcface.pt")
-ZOO_DIR     = Path(r"D:\OrangIdentifier\DATASET_CLASSIFICATION\raw")
-BOS_DIR     = Path(r"D:\OrangIdentifier\V2\NEW_ORANGS_CROPS")
-WILD_DIR    = Path(r"D:\OrangIdentifier\V2\WILD_CROPS\crops")
-OUT_DIR     = Path(r"D:\OrangIdentifier\V2\V3\reports")
+MODEL_PATH = V3_PT
+ZOO_DIR = CROPS_KNOWN_DIR
+BOS_DIR = CROPS_KNOWN_DIR
+WILD_DIR = CROPS_WILD_DIR
+OUT_DIR = OUTPUT_DIR / "v3_reports"
 OUT_DIR.mkdir(parents=True, exist_ok=True)
 
 IMG_SIZE    = 224
@@ -282,7 +296,7 @@ ax.scatter(X2d[n_zoo+n_bos:, 0], X2d[n_zoo+n_bos:, 1],
 bos_x = X2d[n_zoo:n_zoo+n_bos, 0]
 bos_y = X2d[n_zoo:n_zoo+n_bos, 1]
 ax.scatter(bos_x, bos_y, c="cyan", alpha=0.3, s=20, marker="^",
-           label="BOS (30 indivs, inconnus)", zorder=2)
+           label="BOS (30 indivs, unknown)", zorder=2)
 
 # Zoo - colored by individual
 for i, cls in enumerate(classes):
@@ -388,7 +402,7 @@ def hist_ax(ax, data_dict, title_text, threshold=None):
                 color=color, edgecolor="none", density=True)
     if threshold is not None:
         ax.axvline(threshold, color="white", linewidth=2,
-                   linestyle="--", label=f"seuil={threshold}")
+                   linestyle="--", label=f"threshold={threshold}")
     ax.set_title(title_text, color="white", fontsize=11, pad=8)
     ax.tick_params(colors="gray")
     ax.spines[:].set_color("#333")
@@ -401,14 +415,14 @@ hist_ax(axes[0,0], {
 }, "Séparabilité des 10 individus connus\n(plus le gap est grand, mieux c'est)", threshold=THRESHOLD)
 
 hist_ax(axes[0,1], {
-    "BOS inconnus vs zoo": bos_vs_zoo,
+    "BOS unknowns vs zoo": bos_vs_zoo,
     "Même individu (ref)": pos_sims[:500],
-}, "BOS inconnus vs prototypes zoo\n(doivent être < seuil)", threshold=THRESHOLD)
+}, "BOS unknowns vs zoo prototypes\n(should be < threshold)", threshold=THRESHOLD)
 
 hist_ax(axes[1,0], {
     "Wild internet vs zoo": wild_vs_zoo,
-    "BOS inconnus vs zoo": bos_vs_zoo,
-}, "Wild internet vs prototypes zoo\n(doivent être < seuil)", threshold=THRESHOLD)
+    "BOS unknowns vs zoo": bos_vs_zoo,
+}, "Wild internet vs zoo prototypes\n(should be < threshold)", threshold=THRESHOLD)
 
 # Per-individual separability bar chart
 ax = axes[1,1]
@@ -449,7 +463,7 @@ plt.close()
 step(f"Saved: {out}")
 
 # ==============================================================================
-# FIGURE 3 : SAMPLE CROPS GRID (5 individus zoo + 3 BOS + 5 wild)
+# FIGURE 3 : SAMPLE CROPS GRID (5 zoo individuals + 3 BOS + 5 wild)
 # ==============================================================================
 
 title("Figure 3: Sample crops with similarity scores")
@@ -495,11 +509,11 @@ for cls in zoo_show:
 bos_show_names = random.sample(list(bos_paths.keys()), n_bos_show)
 for name in bos_show_names:
     data = img_grid_with_score(bos_paths[name], proto_matrix, classes, THRESHOLD, samples_per)
-    rows_data.append((f"BOS: {name} (inconnu)", data, "bos"))
+    rows_data.append((f"BOS: {name} (unknown)", data, "bos"))
 
 # Wild
 wild_data = img_grid_with_score(wild_sample, proto_matrix, classes, THRESHOLD, samples_per)
-rows_data.append(("WILD internet (inconnu)", wild_data, "wild"))
+rows_data.append(("WILD internet (unknown)", wild_data, "wild"))
 
 total_rows = len(rows_data)
 gs = GridSpec(total_rows, samples_per + 1, figure=fig, hspace=0.15, wspace=0.05)
@@ -526,7 +540,7 @@ for row_i, (row_label, data, row_type) in enumerate(rows_data):
                  transform=iax.transAxes, fontsize=6.5, color="white")
 
 plt.suptitle(
-    "Exemples de crops — vert/rouge = sous/au-dessus du seuil\n"
+    "Sample crops — green/red = below/above threshold\n"
     "Zoo: sim avec le vrai individu | BOS/Wild: sim max avec n'importe quel zoo connu",
     color="white", fontsize=11, y=1.01
 )
@@ -644,17 +658,17 @@ if len(false_pos_idx) > 0:
     cls_counts = [counts.get(i, 0) for i in range(n_cls)]
     bars = ax.barh(cls_names, cls_counts,
                    color=zoo_colors[:n_cls], alpha=0.8, edgecolor="white", linewidth=0.3)
-    ax.set_title(f"Qui capte les wild crops > seuil?\n({len(false_pos_idx)} faux positifs)",
+    ax.set_title(f"Wild crops above threshold?\n({len(false_pos_idx)} false positifs)",
                  color="white", fontsize=11)
     for bar, val in zip(bars, cls_counts):
         if val > 0:
             ax.text(bar.get_width() + 0.1, bar.get_y() + bar.get_height()/2,
                     str(val), va="center", color="white", fontsize=9)
 else:
-    ax.text(0.5, 0.5, "0 faux positifs!", ha="center", va="center",
+    ax.text(0.5, 0.5, "0 false positifs!", ha="center", va="center",
             color="#00ff88", fontsize=16, fontweight="bold",
             transform=ax.transAxes)
-    ax.set_title("Wild crops: faux positifs par classe", color="white", fontsize=11)
+    ax.set_title("Wild crops: false positifs par classe", color="white", fontsize=11)
 ax.set_facecolor("#111")
 ax.tick_params(colors="gray")
 ax.spines[:].set_color("#333")
@@ -691,13 +705,13 @@ if false_pos_paths:
         subax.axis("off")
         subax.set_title(f"{pred}\n{sim:.3f}", fontsize=6, color="#ff4444", pad=2)
 
-    ax.set_title(f"Wild crops au-dessus du seuil (pires cas)\n= faux positifs à investiguer",
+    ax.set_title(f"Wild crops above threshold (worst cases)\n= false positives to investiguer",
                  color="white", fontsize=11)
 else:
-    ax.text(0.5, 0.5, "Aucun faux positif!\nTous les wild crops\nsont rejetés.",
+    ax.text(0.5, 0.5, "Aucun false positif!\nTous les wild crops\nsont rejetés.",
             ha="center", va="center", color="#00ff88", fontsize=14,
             fontweight="bold", transform=ax.transAxes)
-    ax.set_title("Wild crops: aucun faux positif!", color="white", fontsize=11)
+    ax.set_title("Wild crops: aucun false positif!", color="white", fontsize=11)
 
 plt.tight_layout()
 out = OUT_DIR / "5_wild_crops_analysis.png"

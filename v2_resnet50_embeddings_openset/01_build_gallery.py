@@ -1,8 +1,8 @@
 """
 6_build_embeddings.py — Open-set identification via embedding gallery
 ======================================================================
-CNRS IPHC Strasbourg — Orang-outan individual recognition
-Author: Titouane
+Orang-outan individual recognition
+
 Date: May 2026
 
 PURPOSE
@@ -75,9 +75,23 @@ OUTPUTS
 
 REQUIREMENTS
 ------------
-  conda activate orangs
+  conda activate wildlife-id
   pip install scikit-learn matplotlib seaborn umap-learn  (if not already)
 """
+
+import sys
+from pathlib import Path as _Path
+sys.path.insert(0, str(_Path(__file__).parent.parent))
+from common.config_loader import (
+    apply_cache_env,
+    PHOTOS_DIR, WILD_IMAGES_DIR, CROPS_KNOWN_DIR, CROPS_WILD_DIR, CROPS_JSON,
+    MODELS_DIR, OUTPUT_DIR, YOLO_V2_PT,
+    V3_PT, V4_PT, UNKNOWN_THRESHOLD,
+    ARC_SCALE, ARC_MARGIN, MAX_EPOCHS, PATIENCE, PATIENCE_START,
+    LR_BACKBONE, LR_HEAD, BATCH_SIZE, DEVICE, ensure_dirs, to_relative,
+)
+apply_cache_env()  # sets HF_HOME/TORCH_HOME before any heavy imports
+
 
 import os
 import sys
@@ -110,7 +124,7 @@ warnings.filterwarnings('ignore')
 # CONFIGURATION — all paths from the project documentation
 # ==============================================================================
 
-BASE_DIR        = Path(r"D:\OrangIdentifier")
+BASE_DIR = OUTPUT_DIR
 DATASET_DIR     = BASE_DIR / "DATASET_CLASSIFICATION" / "raw"
 RESNET_PT       = BASE_DIR / "MODELS" / "resnet_orangs.pt"
 BACKBONE_PT     = BASE_DIR / "MODELS" / "backbone_orangs.pt"
@@ -156,7 +170,7 @@ OUTPUT_MODELS.mkdir(parents=True, exist_ok=True)
 
 print("=" * 70)
 print("  ORANG-OUTAN EMBEDDING GALLERY BUILDER")
-print("  CNRS IPHC Strasbourg — open-set identification pipeline")
+print("  open-set identification pipeline")
 print("=" * 70)
 print(f"  Device : {DEVICE}")
 print(f"  Dataset: {DATASET_DIR}")
@@ -1122,7 +1136,7 @@ print_section("STEP 10 — Writing text report")
 report = f"""
 ================================================================================
   EMBEDDING GALLERY REPORT — Orang-outan Face Recognition
-  CNRS IPHC Strasbourg
+  
   Generated: {datetime.now().strftime('%Y-%m-%d %H:%M')}
 ================================================================================
 

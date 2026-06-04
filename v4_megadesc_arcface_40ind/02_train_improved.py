@@ -1,6 +1,6 @@
 # V4_train_improved.py
-# CNRS IPHC Strasbourg - Orang-outan V4
-# Author: Titouane
+# Orang-outan V4
+# 
 #
 # WHAT THIS FIXES (from stress test results):
 #   - Blur motion/focus : rupture at moderate -> add strong blur augmentation
@@ -14,14 +14,28 @@
 #   - Lower LR (fine-tuning of fine-tuned model)
 #
 # NEVER OVERWRITES V3:
-#   All outputs -> D:\OrangIdentifier\V2\V4_improved\
+#   All outputs -> output/v4_training/
 #
 # RESUMABLE:
 #   Close terminal anytime. Relaunch -> continues from last epoch.
 #
 # RUN:
-#   conda activate orangs
-#   python D:\OrangIdentifier\V2\scripts\V4_train_improved.py
+#   conda activate wildlife-id
+#   python v4_megadesc_arcface_40ind/02_train_improved.py
+
+import sys
+from pathlib import Path as _Path
+sys.path.insert(0, str(_Path(__file__).parent.parent))
+from common.config_loader import (
+    apply_cache_env,
+    PHOTOS_DIR, WILD_IMAGES_DIR, CROPS_KNOWN_DIR, CROPS_WILD_DIR, CROPS_JSON,
+    MODELS_DIR, OUTPUT_DIR, YOLO_V2_PT,
+    V3_PT, V4_PT, UNKNOWN_THRESHOLD,
+    ARC_SCALE, ARC_MARGIN, MAX_EPOCHS, PATIENCE, PATIENCE_START,
+    LR_BACKBONE, LR_HEAD, BATCH_SIZE, DEVICE, ensure_dirs, to_relative,
+)
+apply_cache_env()  # sets HF_HOME/TORCH_HOME before any heavy imports
+
 
 import os, sys, json, math, time, shutil, signal, random, warnings, io
 import argparse
@@ -29,8 +43,8 @@ from pathlib import Path
 from datetime import datetime, timedelta
 from collections import Counter, defaultdict
 
-os.environ["HF_HOME"]    = r"D:\HuggingFaceCache"
-os.environ["TORCH_HOME"] = r"D:\TorchCache"
+
+
 
 import numpy as np
 import torch
@@ -53,11 +67,11 @@ import matplotlib.gridspec as gridspec
 # PATHS
 # ==============================================================================
 
-V3_MODEL    = Path(r"D:\OrangIdentifier\V2\MODELS\megadesc_T_arcface.pt")
-ZOO_DIR     = Path(r"D:\OrangIdentifier\DATASET_CLASSIFICATION\raw")
-BOS_DIR     = Path(r"D:\OrangIdentifier\V2\NEW_ORANGS_CROPS")
-WILD_DIR    = Path(r"D:\OrangIdentifier\V2\WILD_CROPS\crops")
-OUT_DIR     = Path(r"D:\OrangIdentifier\V2\V4_improved")
+V3_MODEL = V3_PT
+ZOO_DIR = CROPS_KNOWN_DIR
+BOS_DIR = CROPS_KNOWN_DIR
+WILD_DIR = CROPS_WILD_DIR
+OUT_DIR = OUTPUT_DIR / "v4_training"
 
 MODELS_DIR  = OUT_DIR / "models"
 EMBED_DIR   = OUT_DIR / "embeddings"
@@ -767,7 +781,12 @@ def train_epoch(backbone, arc_loss, loader, optimizer, scheduler, epoch):
 # MAIN
 # ==============================================================================
 
-def main():
+def main(resume: bool | None = None):
+    """
+    resume=True   → force resume from checkpoint (error if none found)
+    resume=False  → force fresh training (ignores any existing checkpoint)
+    resume=None   → auto: resume if checkpoint exists, fresh otherwise
+    """
     title("V4 TRAINING — Improved augmentations + 40 supervised individuals")
     log(f"  Started  : {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
     log(f"  Device   : {DEVICE}")
@@ -854,7 +873,15 @@ def main():
     patience_count = 0
     history        = {"train_loss": [], "zoo_val_acc": [], "bos_val_acc": []}
 
-    if RESUME_CKP.exists() and STATE_FILE.exists():
+    # Determine whether to resume
+    _do_resume = (resume is True) or (resume is None and RESUME_CKP.exists() and STATE_FILE.exists())
+
+    if resume is True and not (RESUME_CKP.exists() and STATE_FILE.exists()):
+        log(f"  ERROR: --resume requested but no checkpoint at {RESUME_CKP}", "ERR")
+        log("  Run without --resume to start fresh training.", "ERR")
+        sys.exit(1)
+
+    if _do_resume:
         log("\n  Resume checkpoint detected - loading...")
         try:
             ckpt = torch.load(str(RESUME_CKP), map_location=DEVICE, weights_only=False)
@@ -874,7 +901,10 @@ def main():
             log(f"  Resume failed ({e}), starting fresh.", "WARN")
             start_epoch = 1
     else:
-        log("\n  No checkpoint found - fresh training.")
+        if resume is False:
+            log("\n  --fresh: ignoring any existing checkpoint, starting from scratch.")
+        else:
+            log("\n  No checkpoint found - fresh training.")
 
     # ------------------------------------------------------------------
     # DataLoaders
@@ -1118,4 +1148,24 @@ def main():
 """)
 
 if __name__ == "__main__":
-    main()
+    import argparse
+    parser = argparse.ArgumentParser(
+        description="Train V4 improved — MegaDescriptor-T + ArcFace, 40 individuals"
+    )
+    group = parser.add_mutually_exclusive_group()
+    group.add_argument(
+        "--resume", action="store_true",
+        help=f"Force resume from {RESUME_CKP.name} (error if not found)"
+    )
+    group.add_argument(
+        "--fresh", action="store_true",
+        help="Force fresh training, ignore any existing checkpoint"
+    )
+    args = parser.parse_args()
+
+    if args.resume:
+        main(resume=True)
+    elif args.fresh:
+        main(resume=False)
+    else:
+        main(resume=None)   # auto: resume if checkpoint exists

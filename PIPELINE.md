@@ -1,70 +1,79 @@
-# PIPELINE — Guide étape par étape
+# PIPELINE
 
-## Prérequis
+## Prerequisites
 
 ```bash
 conda create -n orangs python=3.10
 conda activate orangs
 pip install -r requirements.txt
-python setup.py       # vérifie l'environnement
-python models/download_models.py
+python check_env.py              # verify environment
+python models/download_models.py # download pretrained weights
 ```
 
-## V1 — YOLO + ResNet50 classifieur fermé
+## V1: YOLO + ResNet50 closed-set classifier
 
 ```bash
-cd v1_yolo_nano_resnet50
-python 01_annotation_auto.py   # annote les photos brutes
-python 02_train_yolo.py        # entraîne YOLO nano (1h)
-python 02b_train_yolo_v2.py    # entraîne YOLO medium (2h)
-python 03_extract_faces.py     # extrait les crops
-python common/review_crops.py <dossier_crops>  # révision manuelle
-python 04_train_resnet.py      # entraîne ResNet50 (30min)
-python 05_export_tflite.py     # export Android
+python v1_yolo_nano_resnet50/01_auto_annotate.py    # auto-annotate with generic YOLO
+python tools/annotate_keyboard.py                   # manual correction in LabelImg-style tool
+python v1_yolo_nano_resnet50/02_train_yolo_nano.py  # train YOLO nano (1h), quick test
+python v1_yolo_nano_resnet50/04_extract_crops.py    # extract crops → data/crops/known/
+python common/review_crops.py                       # manual crop review (drag & drop)
+python v1_yolo_nano_resnet50/03_train_yolo_medium.py # train YOLO medium from corrected boxes (2h)
+python v1_yolo_nano_resnet50/05_train_resnet50.py   # train ResNet50 closed-set (30min)
+python v1_yolo_nano_resnet50/06_export_tflite.py    # export to TFLite format (see OrangIdentifier-Android repo)
 ```
 
-## V2 — ResNet50 + galerie embeddings open-set
+## V2: ResNet50 + open-set embedding gallery
 
 ```bash
-cd v2_resnet50_embeddings_openset
-# Nécessite d'avoir fait V1 d'abord
-python 06_build_embeddings.py  # construit la galerie + calibre le seuil
+# Requires V1 first
+python v2_resnet50_embeddings_openset/01_build_gallery.py  # build gallery + calibrate threshold
 ```
 
-## V3 — MegaDescriptor + Sub-center ArcFace (10 individus)
+## V3: MegaDescriptor + Sub-center ArcFace (10 individuals)
 
 ```bash
-cd v3_megadesc_arcface_10ind
-python 01_download_wild.py     # télécharge images internet (6000+)
-python 03_extract_faces_wild.py  # YOLO sur les images wild
-python common/review_crops.py <wild_crops>  # révision manuelle
-python 04_train_arcface.py     # entraînement ~30min
-python 07_test_open_set.py     # test sur individus jamais vus
-python 08_visualize.py         # graphiques diagnostics
-python 06_export_gallery.py    # génère embeddings.json
+# Put images in data/wild_images/raw/ (see README.md in that folder, aim for 3000+)
+python v3_megadesc_arcface_10ind/01_extract_wild_crops.py    # YOLO on wild images
+python common/review_crops.py                                # review wild crops (drag & drop)
+python v3_megadesc_arcface_10ind/02_train_arcface.py         # train (~30min on RTX 3050)
+python v3_megadesc_arcface_10ind/02_train_arcface.py --resume  # resume interrupted training
+python v3_megadesc_arcface_10ind/03_export_gallery.py        # export gallery.json → load into Android app (see OrangIdentifier-Android repo)
+python v3_megadesc_arcface_10ind/04_test_open_set.py         # test on unseen individuals
+python v3_megadesc_arcface_10ind/05_visualize.py             # diagnostic plots
 ```
 
-## V4 — MegaDescriptor + ArcFace amélioré (40 individus)
+Optional: recover missed detections
+```bash
+```
+
+## V4: MegaDescriptor + improved ArcFace (40 individuals)
 
 ```bash
-cd v4_megadesc_arcface_40ind
-# Nécessite d'avoir des crops BOS Foundation labelisés
-python 02_extract_new_individuals.py  # YOLO sur photos BOS
-python common/review_crops.py <bos_crops>  # révision
-python 01_train_improved.py    # entraînement ~8h
-python 02_stress_test.py       # test robustesse
-python 03_export_gallery.py    # galerie 40 individus
+# Put new individual photos in data/photos/<IndividualName>/
+python v4_megadesc_arcface_40ind/01_extract_new_crops.py  # YOLO on new individual photos
+python common/review_crops.py                             # review new crops (drag & drop)
+python v4_megadesc_arcface_40ind/02_train_improved.py     # train improved V4 (~8h)
+python v4_megadesc_arcface_40ind/02_train_improved.py --resume  # resume if interrupted
+python v4_megadesc_arcface_40ind/03_export_gallery.py     # export V4 gallery
 ```
 
-## Benchmark comparatif
+## Benchmark and robustness
 
 ```bash
-python common/benchmark.py     # compare V1 à V4
+python common/benchmark.py    # compare V1 to V4 on all datasets
+python common/stress_test.py  # robustness under blur, low-res, JPEG compression, etc.
 ```
 
-## Adapter à une autre espèce
+## Migrating existing data
 
-1. Modifier `config.yaml` (species, chemins)
-2. Photographier les individus (>50 photos par individu recommandé)
-3. Suivre la pipeline V3 ou V4
-4. Le modèle de détection YOLO est entraîné par espèce
+
+```bash
+
+## Adapting to another species
+
+1. Edit `config.yaml`: change `species` and `project_name`
+2. Put the photos in `data/photos/<IndividualName>/`
+3. Photograph each individual (>50 photos per individual recommended)
+4. Follow the V3 or V4 pipeline. MegaDescriptor-T works well on new species with limited data
+5. The YOLO detection model is trained per species (V1 step)

@@ -4,7 +4,7 @@
 # Outputs : D:\OrangIdentifier\benchmark\
 #
 # RUN:
-#   conda activate orangs
+#   conda activate wildlife-id
 #   python D:\OrangIdentifier\benchmark_all_versions.py
 
 import os, sys, json, random, io, warnings, time
@@ -13,8 +13,14 @@ from pathlib import Path
 from datetime import datetime
 from collections import defaultdict
 
-os.environ["HF_HOME"]    = r"D:\HuggingFaceCache"
-os.environ["TORCH_HOME"] = r"D:\TorchCache"
+sys.path.insert(0, str(Path(__file__).parent.parent))
+from common.config_loader import (
+    apply_cache_env,
+    CROPS_KNOWN_DIR, CROPS_WILD_DIR, OUTPUT_DIR,
+    RESNET_PT as V1_MODEL, BACKBONE_PT as V2_BACKBONE,
+    V3_PT as V3_MODEL, V4_PT as V4_MODEL,
+)
+apply_cache_env()
 
 import numpy as np
 import torch
@@ -38,7 +44,7 @@ import matplotlib.patches as mpatches
 
 SEED       = 42
 DEVICE     = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-OUT_DIR    = Path(r"D:\OrangIdentifier\benchmark")
+OUT_DIR    = OUTPUT_DIR / "benchmark"
 OUT_DIR.mkdir(parents=True, exist_ok=True)
 
 DPI        = 220   # haute résolution pour zoom sans flou
@@ -59,15 +65,10 @@ MEGA_STD      = [0.5, 0.5, 0.5]
 # PATHS
 # ==============================================================================
 
-ZOO_DIR    = Path(r"D:\OrangIdentifier\DATASET_CLASSIFICATION\raw")
-BOS_DIR    = Path(r"D:\OrangIdentifier\V2\NEW_ORANGS_CROPS")
-WILD_DIR   = Path(r"D:\OrangIdentifier\V2\WILD_CROPS\crops")
-
-V1_MODEL   = Path(r"D:\OrangIdentifier\MODELS\resnet_orangs.pt")
-V2_BACKBONE= Path(r"D:\OrangIdentifier\MODELS\backbone_orangs.pt")
-V2_GALLERY = Path(r"D:\OrangIdentifier\MODELS\embeddings.json")
-V3_MODEL   = Path(r"D:\OrangIdentifier\V2\MODELS\megadesc_T_arcface.pt")
-V4_MODEL   = Path(r"D:\OrangIdentifier\V2\V4_improved\models\v4_best.pt")
+ZOO_DIR    = CROPS_KNOWN_DIR
+BOS_DIR    = CROPS_KNOWN_DIR       # BOS individuals live in same known/ folder
+WILD_DIR   = CROPS_WILD_DIR
+V2_GALLERY = OUTPUT_DIR / "v2" / "embeddings.json"
 
 exts = {".jpg",".jpeg",".png",".JPG",".JPEG",".PNG"}
 
@@ -617,7 +618,7 @@ def main():
     metrics = [
         ("Accuracy zoo (clean)", [np.mean([v["accuracy"] for v in all_results[sn]["clean"].values()])*100
                                    for sn in short_names]),
-        ("Rejet BOS inconnus (%)", [all_results[sn]["bos_rate"]*100 for sn in short_names]),
+        ("BOS Unknown Rejection (%)", [all_results[sn]["bos_rate"]*100 for sn in short_names]),
         ("Rejet wild internet (%)", [all_results[sn]["wild_rate"]*100 for sn in short_names]),
         ("Gap séparabilité", [all_results[sn]["sep_gap"] for sn in short_names]),
     ]
@@ -711,7 +712,7 @@ def main():
     save_fig(fig, "03_stress_heatmap.png")
 
     # ------------------------------------------------------------------
-    # FIGURE 4 — Par individu zoo
+    # FIGURE 4 — Per zoo individual
     # ------------------------------------------------------------------
     section("Figure 4: Per individual accuracy")
 
@@ -772,7 +773,7 @@ def main():
         ax = axes[1, j]
         style_ax(ax)
         ax.hist(r["bos_sims"],  bins=bins, alpha=0.7, color="#4488ff",
-                density=True, label=f"BOS inconnus (n={len(r['bos_sims'])})")
+                density=True, label=f"BOS unknowns (n={len(r['bos_sims'])})")
         ax.hist(r["wild_sims"], bins=bins, alpha=0.7, color="#ffaa00",
                 density=True, label=f"Wild internet (n={len(r['wild_sims'])})")
         ax.axvline(r["threshold"], color="white", linestyle="--", linewidth=1.5)
@@ -827,7 +828,7 @@ def main():
     save_fig(fig, "06_radar.png")
 
     # ------------------------------------------------------------------
-    # FIGURE 7 — BOS rejection par individu
+    # FIGURE 7 — BOS rejection per individual
     # ------------------------------------------------------------------
     section("Figure 7: BOS rejection per individual")
 
@@ -856,7 +857,7 @@ def main():
             ax.text(val + 1, bar.get_y() + bar.get_height()/2,
                     f"{val:.0f}%", va="center", fontsize=6, color="white")
 
-    fig.suptitle("Taux de rejet BOS par individu inconnu",
+    fig.suptitle("BOS rejection rate per unknown individual",
                  color="white", fontsize=14, fontweight="bold", y=1.01)
     plt.tight_layout()
     save_fig(fig, "07_bos_per_individual.png")

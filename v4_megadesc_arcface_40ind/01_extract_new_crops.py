@@ -1,14 +1,28 @@
 # NEW_1_extract_crops.py
-# CNRS IPHC Strasbourg — Orang-outan V2 pipeline
-# Author: Titouane
+# Orang-outan V2 pipeline
+# 
 #
 # Runs YOLO v2 on all images in NEW_ORANGS/<IndividualName>/
 # Saves 224x224 crops to NEW_ORANGS_CROPS/<IndividualName>/
-# Saves all bounding boxes to boxes_new_orangs.json
+# Saves all bounding boxes to crops.json
 #
 # RUN:
-#   conda activate orangs
-#   python D:\OrangIdentifier\V2\scripts\NEW_1_extract_crops.py
+#   conda activate wildlife-id
+#   python v4_megadesc_arcface_40ind/01_extract_new_crops.py
+
+import sys
+from pathlib import Path as _Path
+sys.path.insert(0, str(_Path(__file__).parent.parent))
+from common.config_loader import (
+    apply_cache_env,
+    PHOTOS_DIR, WILD_IMAGES_DIR, CROPS_KNOWN_DIR, CROPS_WILD_DIR, CROPS_JSON,
+    MODELS_DIR, OUTPUT_DIR, YOLO_V2_PT,
+    V3_PT, V4_PT, UNKNOWN_THRESHOLD,
+    ARC_SCALE, ARC_MARGIN, MAX_EPOCHS, PATIENCE, PATIENCE_START,
+    LR_BACKBONE, LR_HEAD, BATCH_SIZE, DEVICE, ensure_dirs, to_relative,
+)
+apply_cache_env()  # sets HF_HOME/TORCH_HOME before any heavy imports
+
 
 import os
 import sys
@@ -17,8 +31,8 @@ import shutil
 from pathlib import Path
 from datetime import datetime
 
-os.environ["HF_HOME"]    = r"D:\HuggingFaceCache"
-os.environ["TORCH_HOME"] = r"D:\TorchCache"
+
+
 
 import cv2
 import numpy as np
@@ -28,10 +42,10 @@ from tqdm import tqdm
 # CONFIGURATION
 # ==============================================================================
 
-INPUT_DIR   = Path(r"D:\OrangIdentifier\V2\NEW_ORANGS")
-OUTPUT_DIR  = Path(r"D:\OrangIdentifier\V2\NEW_ORANGS_CROPS")
-JSON_PATH   = OUTPUT_DIR / "boxes_new_orangs.json"
-YOLO_MODEL  = Path(r"D:\OrangIdentifier\V2\MODELS\yolo_v2.pt")
+INPUT_DIR = PHOTOS_DIR
+CROPS_OUT_DIR = CROPS_KNOWN_DIR
+JSON_PATH = CROPS_JSON
+YOLO_MODEL = YOLO_V2_PT
 
 CROP_SIZE   = 224
 MARGIN      = 0.05
@@ -104,8 +118,8 @@ def extract_crop(img, x1r, y1r, x2r, y2r):
 
 def main():
     print("=" * 70)
-    print("  NEW ORANGS — Face Extraction")
-    print("  CNRS IPHC Strasbourg")
+    print("  NEW INDIVIDUALS — Face Extraction")
+    print("  ")
     print("=" * 70)
 
     if not INPUT_DIR.exists():

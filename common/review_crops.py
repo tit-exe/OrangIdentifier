@@ -1,10 +1,10 @@
-# NEW_2_review_crops.py
-# CNRS IPHC Strasbourg - Orang-outan V2 pipeline
-# Author: Titouane
+# review_crops.py
+# universal crop reviewer
+# 
 #
-# Crop reviewer for NEW_ORANGS_CROPS.
-# Drag and drop crop JPEGs onto the window.
-# The tool finds the original photo from boxes_new_orangs.json.
+# Drag and drop ANY crop image onto the window.
+# Works with known individuals (zoo/BOS), wild crops, or any mix.
+# Finds the crop entry in data/crops.json regardless of version (V1–V4).
 #
 # KEYS:
 #   D      = draw new box (click+drag, does NOT auto-save)
@@ -18,8 +18,9 @@
 #   Q      = quit
 #
 # RUN:
-#   conda activate orangs
-#   python D:\OrangIdentifier\V2\scripts\NEW_2_review_crops.py
+#   python common/review_crops.py
+#   python common/review_crops.py path/to/crop1.jpg path/to/crop2.jpg
+#   python common/review_crops.py --json path/to/other.json
 
 import sys
 import json
@@ -44,16 +45,19 @@ from PyQt5.QtGui import (
 )
 
 # ==============================================================================
-# PATHS
+# CONFIG — import paths from config_loader so this script has zero hardcoded paths
 # ==============================================================================
 
-JSON_PATH  = Path(r"D:\OrangIdentifier\V2\NEW_ORANGS_CROPS\boxes_new_orangs.json")
-CROPS_ROOT = Path(r"D:\OrangIdentifier\V2\NEW_ORANGS_CROPS")
-CROP_SIZE  = 224
-HANDLE_R   = 7
+_HERE = Path(__file__).parent
+sys.path.insert(0, str(_HERE.parent))
+
+from common.config_loader import CROPS_JSON, REPO_ROOT, resolve_path, to_relative
+
+CROP_SIZE = 224
+HANDLE_R  = 7
 
 # ==============================================================================
-# JSON MANAGER
+# JSON MANAGER — atomic write + self-healing backup
 # ==============================================================================
 
 class JsonManager:
@@ -68,7 +72,7 @@ class JsonManager:
                 try:
                     with open(self.path, encoding="utf-8") as f:
                         self._data = json.load(f)
-                    print(f"[INFO] JSON loaded: {len(self._data):,} entries")
+                    print(f"[INFO] JSON loaded: {len(self._data):,} entries from {self.path}")
                     return dict(self._data)
                 except json.JSONDecodeError:
                     print("[WARN] Main JSON corrupted, trying backup...")
@@ -83,6 +87,7 @@ class JsonManager:
                 except Exception:
                     pass
             self._data = {}
+            print(f"[WARN] No JSON found at {self.path} - starting empty")
             return {}
 
     def save(self, data):
@@ -90,6 +95,7 @@ class JsonManager:
             tmp = self.path.with_suffix(".tmp")
             bak = self.path.with_suffix(".bak")
             try:
+                self.path.parent.mkdir(parents=True, exist_ok=True)
                 with open(tmp, "w", encoding="utf-8") as f:
                     json.dump(data, f, indent=2, ensure_ascii=False)
                 if self.path.exists():
@@ -109,33 +115,74 @@ class JsonManager:
             return dict(self._data)
 
 # ==============================================================================
-# FIND ENTRY
+# FIND ENTRY — 3-level lookup, works for known/wild/any version
 # ==============================================================================
 
-def find_entry(crop_path, db):
+def find_entry(crop_path: Path, db: dict):
+    """
+    Find the JSON entry for a given crop file.
+
+    Lookup order:
+      1. Direct key "IndividualName/stem"  — known individuals (zoo, BOS)
+      2. Direct key "wild/stem"            — wild/background crops
+      3. Scan all entries for matching crop_file basename  — any structure
+      4. Match by individu+stem fields     — legacy entries
+    """
     name     = crop_path.name
     stem     = crop_path.stem
-    individu = crop_path.parent.name
+    individu = crop_path.parent.name   # folder name = individual or "wild"
 
+    # 1. Direct known: "Molly/photo123"
     key = f"{individu}/{stem}"
     if key in db:
         return key, db[key]
 
+    # 2. Wild crops: "wild/<stem>"  (works even if dropped from a non-wild folder)
+    wild_key = f"wild/{stem}"
+    if wild_key in db:
+        return wild_key, db[wild_key]
+
+    # 3. Scan on crop_file basename (works for any path structure)
     for k, v in db.items():
-        if not isinstance(v, dict): continue
+        if not isinstance(v, dict):
+            continue
         cf = v.get("crop_file", "")
         if cf and Path(cf).name == name:
             return k, v
 
+    # 4. Match individu + stem fields (legacy entries with different key format)
     for k, v in db.items():
-        if not isinstance(v, dict): continue
+        if not isinstance(v, dict):
+            continue
         if v.get("individu") == individu and v.get("stem") == stem:
             return k, v
 
     return None, {}
 
 # ==============================================================================
-# CROP REGEN
+# RESOLVE PHOTO SOURCE — handles relative and absolute paths
+# ==============================================================================
+
+def resolve_photo(entry: dict) -> Path | None:
+    """
+    Resolve the photo_source field from a JSON entry.
+    Handles:
+      - Relative paths (relative to REPO_ROOT) — new format
+      - Absolute paths                          — legacy format
+    Returns the resolved Path if it exists, else None.
+    """
+    src = entry.get("photo_source", "")
+    if not src:
+        return None
+    p = Path(src)
+    if p.is_absolute():
+        return p if p.exists() else None
+    # Relative: resolve from REPO_ROOT
+    resolved = (REPO_ROOT / p).resolve()
+    return resolved if resolved.exists() else None
+
+# ==============================================================================
+# CROP REGEN — regenerate 224x224 crop from original photo and bounding box
 # ==============================================================================
 
 def regen_crop(photo_src, x1, y1, x2, y2, dest):
@@ -154,7 +201,7 @@ def regen_crop(photo_src, x1, y1, x2, y2, dest):
     return out
 
 # ==============================================================================
-# IMAGE CANVAS
+# IMAGE CANVAS — shows original photo with interactive bounding box
 # ==============================================================================
 
 class ImageCanvas(QWidget):
@@ -401,7 +448,7 @@ class PreviewLabel(QLabel):
 # ==============================================================================
 
 class ReviewWindow(QMainWindow):
-    def __init__(self, json_path, initial_files):
+    def __init__(self, json_path: Path, initial_files: list):
         super().__init__()
         self.json_mgr      = JsonManager(json_path)
         self.db            = self.json_mgr.load()
@@ -411,13 +458,14 @@ class ReviewWindow(QMainWindow):
         self.current_key   = None
         self.current_entry = None
         self.current_img   = None
+        self.current_photo = None   # resolved Path to original photo
         self.stats = {
             "corrected": 0, "validated": 0,
             "rejected":  0, "skipped":   0, "deleted": 0
         }
         self._build_ui()
         self.setAcceptDrops(True)
-        self.setWindowTitle("New Orangs - Crop Reviewer  |  CNRS IPHC")
+        self.setWindowTitle("Crop Reviewer  |")
         self.resize(1300, 820)
         if initial_files:
             self._enqueue([Path(f) for f in initial_files])
@@ -520,11 +568,9 @@ class ReviewWindow(QMainWindow):
         )
 
     def _on_box_changed(self, x1, y1, x2, y2):
-        if self.current_img is None or self.current_entry is None:
+        if self.current_img is None or self.current_photo is None:
             return
-        src  = self.current_entry.get("photo_source", "")
-        if not src: return
-        crop = regen_crop(src, x1, y1, x2, y2, dest=None)
+        crop = regen_crop(self.current_photo, x1, y1, x2, y2, dest=None)
         self.preview.set_crop(crop)
         bw   = x2 - x1
         bh   = y2 - y1
@@ -568,36 +614,47 @@ class ReviewWindow(QMainWindow):
         self._status("Queue empty - drop more files to continue")
         self._update_stats()
 
-    def _load_crop(self, crop_path):
+    def _load_crop(self, crop_path: Path) -> bool:
         self.db = self.json_mgr.get_data()
         key, entry = find_entry(crop_path, self.db)
         if not key:
             self._status(
-                f"[WARN] No JSON entry for {crop_path.name} - skipping")
+                f"[WARN] No JSON entry for {crop_path.name} - skipping  "
+                f"(run tools/data migration.py if using legacy data)")
             return False
-        src = entry.get("photo_source", "")
-        if not src or not Path(src).exists():
-            self._status(f"[WARN] Source not found: {src} - skipping")
+
+        # Resolve photo source — handles both relative and absolute paths
+        photo = resolve_photo(entry)
+        if photo is None:
+            src_raw = entry.get("photo_source", "(none)")
+            self._status(f"[WARN] Source photo not found: {src_raw} - skipping")
             return False
-        img = cv2.imread(str(src))
+
+        img = cv2.imread(str(photo))
         if img is None:
-            self._status(f"[WARN] Cannot read {src} - skipping")
+            self._status(f"[WARN] Cannot read photo: {photo.name} - skipping")
             return False
+
         self.current_crop  = crop_path
         self.current_key   = key
         self.current_entry = entry
         self.current_img   = img
+        self.current_photo = photo
+
         x1 = entry.get("crop_x1", 0)
         y1 = entry.get("crop_y1", 0)
         x2 = entry.get("crop_x2", 100)
         y2 = entry.get("crop_y2", 100)
         self.canvas.set_image_and_box(img, (x1, y1, x2, y2))
         self._on_box_changed(x1, y1, x2, y2)
-        individu = entry.get("individu", "?")
-        conf     = entry.get("yolo_conf", "?")
-        statut   = entry.get("statut", "?")
+
+        individu    = entry.get("individu") or "wild"
+        conf        = entry.get("yolo_conf", "?")
+        statut      = entry.get("statut", "?")
+        source_type = entry.get("source_type", "")
+        tag         = f"[{source_type}]" if source_type else ""
         self._status(
-            f"{individu} / {crop_path.name}   "
+            f"{individu} / {crop_path.name}  {tag}  "
             f"conf={conf}   statut={statut}   "
             f"queue={len(self.queue)}"
         )
@@ -613,11 +670,13 @@ class ReviewWindow(QMainWindow):
         if self.current_crop is None or self.current_entry is None:
             return
         x1, y1, x2, y2 = self.canvas.get_box()
-        src = self.current_entry.get("photo_source", "")
-        ok  = regen_crop(src, x1, y1, x2, y2, self.current_crop)
+
+        # Regen crop from original photo with new box
+        ok = regen_crop(self.current_photo, x1, y1, x2, y2, self.current_crop)
         if ok is None:
             self._status("[ERROR] Could not regenerate crop")
             return
+
         updated = dict(self.current_entry)
         updated.update({
             "crop_x1": x1, "crop_y1": y1,
@@ -625,7 +684,8 @@ class ReviewWindow(QMainWindow):
             "statut":  "valide",
             "manually_reviewed": True,
             "review_date": datetime.now().isoformat(),
-            "crop_file": str(self.current_crop),
+            # Store crop_file as relative path for portability
+            "crop_file": to_relative(self.current_crop),
         })
         data = self.json_mgr.get_data()
         data[self.current_key] = updated
@@ -674,29 +734,34 @@ class ReviewWindow(QMainWindow):
         if self.current_crop is None or self.current_entry is None:
             return
         deleted = []
+        # Delete crop file(s) — both recorded path and current drag path
         for f in [
             Path(self.current_entry.get("crop_file", "")),
             self.current_crop
         ]:
-            if f and Path(str(f)).exists():
+            if not f or not str(f): continue
+            resolved = resolve_path(f) if not Path(str(f)).is_absolute() else Path(str(f))
+            if resolved.exists():
                 try:
-                    Path(str(f)).unlink()
-                    deleted.append(Path(str(f)).name)
+                    resolved.unlink()
+                    deleted.append(resolved.name)
                 except Exception:
                     pass
-        src = self.current_entry.get("photo_source", "")
-        if src and Path(src).exists():
+        # Delete original photo (wild crops only — don't delete labeled individual photos)
+        source_type = self.current_entry.get("source_type", "known")
+        if source_type == "wild" and self.current_photo and self.current_photo.exists():
             try:
-                Path(src).unlink()
-                deleted.append(Path(src).name)
+                self.current_photo.unlink()
+                deleted.append(self.current_photo.name)
             except Exception:
                 pass
+        # Remove JSON entry
         data = self.json_mgr.get_data()
         if self.current_key in data:
             del data[self.current_key]
         self.json_mgr.save(data)
         self.stats["deleted"] += 1
-        self._status(f"Deleted: {', '.join(deleted)}")
+        self._status(f"Deleted: {', '.join(deleted) if deleted else '(none found)'}")
         self.current_crop = None
         self._load_next()
 
@@ -736,10 +801,22 @@ class ReviewWindow(QMainWindow):
 # ==============================================================================
 
 def main():
-    parser = argparse.ArgumentParser()
-    parser.add_argument("--json", type=Path, default=JSON_PATH)
-    parser.add_argument("files", nargs="*", type=str)
+    parser = argparse.ArgumentParser(
+        description="Crop reviewer — drag & drop any crop, works for all versions"
+    )
+    parser.add_argument(
+        "--json", type=Path, default=CROPS_JSON,
+        help=f"Path to crops JSON (default: data/crops.json)"
+    )
+    parser.add_argument(
+        "files", nargs="*", type=str,
+        help="Optional crop files to pre-load in the queue"
+    )
     args = parser.parse_args()
+
+    if not args.json.exists():
+        print(f"[WARN] JSON not found: {args.json}")
+        print("       Run tools/data migration.py first, or pass --json <path>")
 
     app = QApplication(sys.argv)
     app.setStyle("Fusion")
@@ -756,6 +833,7 @@ def main():
     win = ReviewWindow(args.json, args.files)
     win.show()
     sys.exit(app.exec_())
+
 
 if __name__ == "__main__":
     main()

@@ -1,16 +1,16 @@
 # OrangIdentifier
 
-**Individual facial recognition for Bornean orangutans** — end-to-end pipeline from raw photographs to offline Android deployment.
-
-> CNRS IPHC Strasbourg · BOS Foundation Borneo · May 2026  
+**Individual facial recognition for Bornean orangutans.** End-to-end pipeline from raw photographs to an identity gallery.
 
 ---
 
 ## Overview
 
-Rangers at BOS Foundation (Borneo Orangutan Survival) need to identify individual orangutans during field patrols. Manual identification across dozens of individuals in rehabilitation is time-consuming and error-prone.
+This pipeline trains a face detector and an individual identification model from a collection of labeled photographs, then exports the result as a lightweight **gallery JSON** (one averaged embedding vector per individual).
 
-This pipeline produces an Android app that runs **entirely offline** and returns an identity match or "unknown individual" within seconds of taking a photo.
+The gallery can be loaded into any app (Android, desktop, embedded). Adding a new individual requires 10–20 photos, takes under a minute, and requires no retraining.
+
+> **Android app** → separate repository: [tit0000/OrangIdentifier-Android](https://github.com/tit0000/OrangIdentifier-Android) *(coming soon)*
 
 ---
 
@@ -43,8 +43,6 @@ flowchart LR
     style G fill:#1e1e2e,stroke:#f38ba8,color:#f38ba8
 ```
 
-The gallery is a JSON file containing one averaged embedding vector per individual. Adding a new individual requires 10–20 photos, takes under a minute, and requires no retraining.
-
 ---
 
 ## Four versions
@@ -62,7 +60,7 @@ timeline
        : MegaDescriptor-T-224 + Sub-center ArcFace
        : Wild internet crops as background class
     V4 : Same architecture as V3
-       : 40 supervised individuals (zoo + BOS)
+       : 40 supervised individuals
        : Improved augmentations for blur and low-resolution
 ```
 
@@ -71,8 +69,8 @@ timeline
 | Backbone | ResNet50 | ResNet50 | MegaDescriptor-T | **MegaDescriptor-T** |
 | Loss | Cross-entropy | — (reuse V1) | Sub-center ArcFace | **Sub-center ArcFace** |
 | Supervised individuals | 10 | 10 | 10 | **40** |
-| Zoo accuracy | 96.3% | ~98% | 99.2% | **99.2%** |
-| BOS rejection (1622 unseen crops) | none | 27.5% | 97.5% | **97.5%** |
+| Closed-set accuracy | 96.3% | ~98% | 99.2% | **99.2%** |
+| Unknown rejection (1,622 unseen crops) | none | 27.5% | 97.5% | **97.5%** |
 | Wild internet rejection | none | 48.5% | 93.2% | **93.0%** |
 | Separability gap | — | 0.294 | 0.883 | **0.885** |
 | Inference time (RTX 3050) | 12 ms | 11 ms | 17 ms | **20 ms** |
@@ -89,7 +87,7 @@ Field photos are rarely ideal. Each model was evaluated across 8 degradation typ
 
 ![Stress test](assets/stress_test.png)
 
-**Heatmap — accuracy (%) by degradation and severity**
+**Accuracy (%) by degradation type and severity**
 
 ![Stress heatmap](assets/stress_heatmap.png)
 
@@ -112,11 +110,11 @@ V4 improves robustness on the two critical failure modes identified in V3:
 
 | Source | Individuals | Crops | Role |
 |--------|-------------|-------|------|
-| Zoo Amnéville + Indonesia | 10 | 2,127 | Training (known) |
-| BOS Foundation Borneo | 30 | 1,622 | Open-set test only (never seen during training) |
+| Captive collection | 10 | 2,127 | Training (known) |
+| Field rescue center | 30 | 1,622 | Open-set test only (never seen during training) |
 | Internet (iNaturalist, GBIF, web) | unlabeled | 5,429 | Background class during training |
 
-Images are not included in this repository. Contact CNRS IPHC Strasbourg for dataset access.
+Images are not included in this repository.
 
 ---
 
@@ -135,19 +133,29 @@ python models/download_models.py --version all
 | `resnet50_classifier_10classes_acc96.pt` | V1 | 90 MB | Closed-set classifier |
 | `resnet50_backbone_2048dim.pt` | V2 | 90 MB | Embedding backbone, 2048-dim |
 | `megadesc_T_arcface_final_epoch21_acc99.pt` | V3 | 105 MB | ArcFace, 10 individuals |
-| `megadesc_T_arcface_v4_40individus_acc99.pt` | **V4** | 105 MB | ArcFace, 40 individuals |
+| `megadesc_T_arcface_v4_40individuals_acc99.pt` | **V4** | 105 MB | ArcFace, 40 individuals |
 
-Hosted at [HuggingFace — tit0000/OrangIdentifier](https://huggingface.co/tit0000/OrangIdentifier)
+Hosted at [HuggingFace: tit0000/OrangIdentifier](https://huggingface.co/tit0000/OrangIdentifier)
 
 ---
 
 ## Installation
 
 ```bash
-conda create -n orangs python=3.10
-conda activate orangs
-pip install -r requirements.txt
-python setup.py
+conda create -n wildlife-id python=3.10
+conda activate wildlife-id
+
+# PyTorch with CUDA (note: plain pip installs a CPU-only build)
+pip install torch==2.4.1+cu124 torchvision==0.19.1+cu124 \
+    --index-url https://download.pytorch.org/whl/cu124
+
+# All other dependencies
+pip install timm==0.9.16 ultralytics==8.2.0 Pillow==10.3.0 \
+    opencv-python==4.9.0.80 numpy==1.26.4 scikit-learn==1.4.2 \
+    umap-learn==0.5.6 matplotlib==3.9.0 PyQt5==5.15.10 \
+    tqdm==4.66.4 huggingface_hub==0.23.2
+
+python check_env.py
 python models/download_models.py
 ```
 
@@ -161,16 +169,17 @@ See [PIPELINE.md](PIPELINE.md) for the complete step-by-step guide.
 
 ```bash
 # 1. Extract faces from raw photos
-python v3_megadesc_arcface_10ind/03_extract_faces_wild.py
+python v1_yolo_nano_resnet50/04_extract_crops.py
 
 # 2. Manual crop review (drag and drop)
-python common/review_crops.py path/to/crops/
+python common/review_crops.py
 
 # 3. Train V4 (recommended)
-python v4_megadesc_arcface_40ind/01_train_improved.py
+python v4_megadesc_arcface_40ind/02_train_improved.py
 
-# 4. Export gallery for Android
-python v4_megadesc_arcface_40ind/05_export_gallery.py
+# 4. Export gallery JSON
+python v4_megadesc_arcface_40ind/03_export_gallery.py
+# → output/gallery.json  (load this into the Android app or any inference app)
 
 # 5. Benchmark all versions
 python common/benchmark.py
@@ -194,12 +203,11 @@ OrangIdentifier/
 │   ├── download_models.py           Download pretrained weights from HuggingFace
 │   └── README.md                    Model catalogue and direct links
 ├── docs/
-│   ├── DOCUMENTATION_V1.md
-│   ├── DOCUMENTATION_V2_V3.md
 │   └── figures/                     Full benchmark figures (10 graphs)
 ├── config.yaml                      Single configuration file to adapt for a new species
-├── setup.py                         Environment check and cache configuration
+├── check_env.py                     Environment check and setup instructions
 ├── PIPELINE.md                      Step-by-step usage guide
+├── QUICKSTART.md                    Quick start guide
 └── requirements.txt
 ```
 
@@ -207,14 +215,23 @@ OrangIdentifier/
 
 ## Adapting to another species
 
-The pipeline is designed to be reusable. To apply it to gorillas, chimpanzés, or other primates:
+The pipeline is designed to be reusable. To apply it to gorillas, chimpanzees, or any other species:
 
-1. Edit `config.yaml` — set `species`, `project_name`, and data paths
-2. Annotate photos using `common/review_crops.py`
-3. Retrain YOLO on the new annotations
-4. Follow the V3 or V4 pipeline
+1. Edit `config.yaml`: set `species`, `project_name`, and data paths
+2. Collect labeled photos, one subfolder per individual in `data/photos/`
+3. Annotate faces using `tools/annotate_keyboard.py`
+4. Retrain YOLO on the new annotations
+5. Follow the V3 or V4 pipeline
 
 MegaDescriptor-T is pretrained on animal re-identification across dozens of species and generalizes well to new contexts with limited data.
+
+---
+
+## Note on this repository
+
+The code here is a cleaned-up version of what was actually used during development. The original work involved a lot of trial and error, many different scripts, and messy iterations. This repo is a reorganised version of that.
+
+Everything should work as documented, but if something breaks, feel free to open an issue or contact me directly. You can also drop the relevant files into an AI like [Claude](https://claude.ai), it reads the whole codebase and can usually figure out what went wrong.
 
 ---
 

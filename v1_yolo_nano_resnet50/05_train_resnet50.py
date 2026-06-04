@@ -1,28 +1,27 @@
 #!/usr/bin/env python3
 # =============================================================================
 # 4_train_resnet.py
-# Identification individuelle des orangs-outangs — ResNet50 Fine-tuning
-# CNRS IPHC Strasbourg | Stage Titouane CPI2
+# Individual identification (any species) — ResNet50 fine-tuning
 #
 # Architecture : ResNet50 (ImageNet) → AvgPool → Dropout(0.5) → FC(N)
 #
-# Anti-overfit (PRIORITÉ sur petit dataset) :
-#   ▸ Fine-tuning progressif : freeze backbone → unfreeze avec LR différentiel
-#   ▸ Augmentation forte (crop, flip, jitter, perspective, blur, erasing)
-#   ▸ Mixup (α=0.2) — mélange paires d'images, lisse la frontière de décision
-#   ▸ Label smoothing (ε=0.1) — empêche l'overconfidence
-#   ▸ WeightedRandomSampler — compense Molly×408 vs PUTRI×56
-#   ▸ Early stopping patience=20 sur val accuracy
+# Anti-overfitting (small dataset):
+#   ▸ Progressive fine-tuning: frozen backbone → unfrozen with differential LR
+#   ▸ Strong augmentation (crop, flip, jitter, perspective, blur, erasing)
+#   ▸ Mixup (α=0.2) — blends image pairs, smooths decision boundaries
+#   ▸ Label smoothing (ε=0.1) — prevents overconfidence
+#   ▸ WeightedRandomSampler — compensates class imbalance
+#   ▸ Early stopping patience=20 on val accuracy
 #   ▸ Weight decay (AdamW)
 #
-# Détection "individu inconnu" (open-set recognition) :
-#   ▸ Seuil calibré sur val set (5e percentile des prédictions correctes)
-#   ▸ Embeddings train sauvegardés → kNN fallback possible
-#   ▸ Si conf < seuil → "INDIVIDU NON RECONNU"
+# Unknown individual detection (open-set recognition):
+#   ▸ Threshold calibrated on val set (5th percentile of correct confidences)
+#   ▸ Train embeddings saved → kNN fallback possible
+#   ▸ If conf < threshold → "UNKNOWN INDIVIDUAL"
 #
-# Scalabilité — Ajouter un nouvel individu :
-#   ▸ Backbone sauvegardé séparément → fine-tune uniquement la tête (~10 min)
-#   ▸ Voir instructions en bas de ce fichier
+# Scalability — adding a new individual:
+#   ▸ Backbone saved separately → fine-tune head only (~10 min)
+#   ▸ See instructions at the bottom of this file
 # =============================================================================
 
 import sys
@@ -47,7 +46,7 @@ from PIL import Image, ImageFile
 ImageFile.LOAD_TRUNCATED_IMAGES = True
 warnings.filterwarnings('ignore')
 
-# Dépendances optionnelles
+# Optional dependencies
 try:
     from sklearn.model_selection import train_test_split
     from sklearn.metrics import confusion_matrix, classification_report
@@ -55,37 +54,37 @@ try:
     import matplotlib.pyplot as plt
     import seaborn as sns
 except ImportError:
-    print("ERREUR : pip install scikit-learn matplotlib seaborn")
+    print("ERROR: pip install scikit-learn matplotlib seaborn")
     sys.exit(1)
 
-# Config projet
-sys.path.insert(0, str(Path(__file__).parent))
-from config import BASE_DIR, DATASET_CLASSIF_DIR, MODELS_DIR, RESULTS_DIR
+# Project config
+sys.path.insert(0, str(Path(__file__).parent.parent))
+from common.config_loader import CROPS_KNOWN_DIR, MODELS_DIR, OUTPUT_DIR, ensure_dirs
 
 # =============================================================================
-# CONFIGURATION — modifie ici si besoin
+# CONFIGURATION
 # =============================================================================
 
-RAW_DIR       = DATASET_CLASSIF_DIR / "raw"
-OUT_DIR       = RESULTS_DIR / "resnet_training"
-MODEL_SAVE    = MODELS_DIR / "resnet_orangs.pt"
-BACKBONE_SAVE = MODELS_DIR / "backbone_orangs.pt"
-META_SAVE     = MODELS_DIR / "resnet_metadata.json"
-EMBED_SAVE    = MODELS_DIR / "embeddings_train.pt"
+RAW_DIR       = CROPS_KNOWN_DIR                         # data/crops/known/
+OUT_DIR       = OUTPUT_DIR / "resnet_training"
+MODEL_SAVE    = MODELS_DIR / "resnet50_classifier.pt"
+BACKBONE_SAVE = MODELS_DIR / "resnet50_backbone.pt"
+META_SAVE     = MODELS_DIR / "resnet50_metadata.json"
+EMBED_SAVE    = MODELS_DIR / "resnet50_embeddings.pt"
 
 IMG_SIZE      = 224
 BATCH_SIZE    = 32
 SEED          = 42
 
-# Phases d'entraînement
-EPOCHS_FREEZE   = 10     # Phase 1 : backbone gelé, train la tête seulement
-EPOCHS_UNFREEZE = 90     # Phase 2 : fine-tuning complet (early stop)
-LR_HEAD         = 1e-3   # Learning rate tête (Phase 1 et 2)
-LR_BACKBONE     = 5e-5   # Learning rate backbone (Phase 2 seulement, très bas)
+# Training phases
+EPOCHS_FREEZE   = 10     # Phase 1: frozen backbone, train head only
+EPOCHS_UNFREEZE = 90     # Phase 2: full fine-tuning (early stopping)
+LR_HEAD         = 1e-3   # Head learning rate (Phase 1 and 2)
+LR_BACKBONE     = 5e-5   # Backbone learning rate (Phase 2 only, very low)
 WEIGHT_DECAY    = 1e-4
-LABEL_SMOOTH    = 0.10   # Label smoothing — réduit overconfidence
-MIXUP_ALPHA     = 0.20   # Mixup — 0 pour désactiver
-PATIENCE        = 20     # Early stopping : epochs sans amélioration
+LABEL_SMOOTH    = 0.10   # Label smoothing — reduces overconfidence
+MIXUP_ALPHA     = 0.20   # Mixup — set 0 to disable
+PATIENCE        = 20     # Early stopping: epochs without improvement
 DROPOUT         = 0.50
 
 DEVICE = torch.device("cuda" if torch.cuda.is_available() else "cpu")
@@ -94,41 +93,41 @@ if torch.cuda.is_available():
     torch.cuda.manual_seed_all(SEED)
 
 # =============================================================================
-# AFFICHAGE — helpers
+# DISPLAY — helpers
 # =============================================================================
 
 SEP  = "=" * 64
 SEP2 = "─" * 64
 
-def titre(texte):
+def title(texte):
     print(f"\n{SEP}")
     print(f"  {texte}")
     print(SEP)
 
-def sous_titre(texte):
+def subtitle(texte):
     print(f"\n  {texte}")
     print(f"  {SEP2[:len(texte)+2]}")
 
-def barre(current, total, width=36, suffix=''):
-    """Barre de progression inline."""
+def progress_bar(current, total, width=36, suffix=''):
+    """Inline progress bar."""
     pct  = current / max(total, 1)
     fill = int(width * pct)
     bar  = '█' * fill + '░' * (width - fill)
     print(f"\r  [{bar}] {current:>4}/{total}  {suffix:<40}", end='', flush=True)
 
-def fmt_temps(secondes):
-    return str(timedelta(seconds=int(secondes)))
+def fmt_time(seconds):
+    return str(timedelta(seconds=int(seconds)))
 
 # =============================================================================
-# CHARGEMENT DU DATASET
+# LOAD DATASET
 # =============================================================================
 
-def charger_dataset():
-    """Scan RAW_DIR, ignore les dossiers commençant par '_'."""
+def load_dataset():
+    """Scan RAW_DIR, ignore folders starting with '_'."""
     print(f"\n  Scan de : {RAW_DIR}")
 
     if not RAW_DIR.exists():
-        print(f"  ERREUR : dossier introuvable → {RAW_DIR}")
+        print(f"  ERROR: folder not found: {RAW_DIR}")
         sys.exit(1)
 
     exts = {'.jpg', '.jpeg', '.JPG', '.JPEG', '.png', '.PNG'}
@@ -138,31 +137,31 @@ def charger_dataset():
     ])
 
     if not classes_dirs:
-        print(f"  ERREUR : aucun sous-dossier individu dans {RAW_DIR}")
+        print(f"  ERROR: no individual subfolder found in {RAW_DIR}")
         sys.exit(1)
 
     classes = [d.name for d in classes_dirs]
     c2i = {c: i for i, c in enumerate(classes)}
-    chemins, labels = [], []
+    paths, labels = [], []
 
     for d in classes_dirs:
         imgs = [f for f in d.iterdir() if f.suffix in exts]
         for img in sorted(imgs):
-            chemins.append(img)
+            paths.append(img)
             labels.append(c2i[d.name])
 
-    return chemins, labels, classes
+    return paths, labels, classes
 
 # =============================================================================
-# AFFICHAGE DISTRIBUTION
+# DISTRIBUTION DISPLAY
 # =============================================================================
 
-def afficher_distribution(labels, classes, nom="Dataset"):
+def print_distribution(labels, classes, name="Dataset"):
     counts = Counter(labels)
     total  = len(labels)
     max_n  = max(counts.values())
 
-    print(f"\n  {'Individu':<22} {'N':>6}  {'%':>6}  Distribution")
+    print(f"\n  {'Individual':<22} {'N':>6}  {'%':>6}  Distribution")
     print(f"  {'─'*22}  {'─'*6}  {'─'*6}  {'─'*25}")
     for i, cls in enumerate(classes):
         n   = counts[i]
@@ -175,14 +174,14 @@ def afficher_distribution(labels, classes, nom="Dataset"):
     ratio = max_n / min(counts.values())
     print(f"\n  Ratio max/min : {ratio:.1f}×")
     if ratio > 4:
-        print("  → Déséquilibre important → WeightedRandomSampler activé")
+        print("  -> Class imbalance detected -> WeightedRandomSampler enabled")
 
 # =============================================================================
-# SPLIT STRATIFIÉ 70 / 15 / 15
+# STRATIFIED SPLIT 70 / 15 / 15
 # =============================================================================
 
-def split_dataset(chemins, labels, classes):
-    X = list(range(len(chemins)))
+def split_dataset(paths, labels, classes):
+    X = list(range(len(paths)))
 
     X_tv, X_te, y_tv, y_te = train_test_split(
         X, labels, test_size=0.15, stratify=labels, random_state=SEED
@@ -192,39 +191,39 @@ def split_dataset(chemins, labels, classes):
         X_tv, y_tv, test_size=val_ratio, stratify=y_tv, random_state=SEED
     )
 
-    total = len(chemins)
-    print(f"\n  Split stratifié (par individu) :")
+    total = len(paths)
+    print(f"\n  Stratified split (per individual) :")
     print(f"    Train : {len(X_tr):>4} images  ({len(X_tr)/total*100:.1f}%)")
     print(f"    Val   : {len(X_va):>4} images  ({len(X_va)/total*100:.1f}%)")
     print(f"    Test  : {len(X_te):>4} images  ({len(X_te)/total*100:.1f}%)")
 
-    # Vérifier que toutes les classes sont dans le train
+    # Verify all classes are in the train set
     classes_train = set(y_tr)
     if len(classes_train) < len(classes):
-        absents = [classes[i] for i in range(len(classes)) if i not in classes_train]
-        print(f"\n  ATTENTION : {absents} absents du train (images insuffisantes)")
+        missing = [classes[i] for i in range(len(classes)) if i not in classes_train]
+        print(f"\n  WARNING: {missing} missing from train set (insufficient images)")
 
     return (
-        [chemins[i] for i in X_tr], y_tr,
-        [chemins[i] for i in X_va], y_va,
-        [chemins[i] for i in X_te], y_te,
+        [paths[i] for i in X_tr], y_tr,
+        [paths[i] for i in X_va], y_va,
+        [paths[i] for i in X_te], y_te,
     )
 
 # =============================================================================
 # DATASET PYTORCH
 # =============================================================================
 
-class OrangDataset(Dataset):
-    def __init__(self, chemins, labels, transform):
-        self.chemins   = chemins
+class IndividualDataset(Dataset):
+    def __init__(self, paths, labels, transform):
+        self.paths   = paths
         self.labels    = labels
         self.transform = transform
 
-    def __len__(self): return len(self.chemins)
+    def __len__(self): return len(self.paths)
 
     def __getitem__(self, idx):
         try:
-            img = Image.open(self.chemins[idx]).convert('RGB')
+            img = Image.open(self.paths[idx]).convert('RGB')
         except Exception:
             img = Image.new('RGB', (IMG_SIZE, IMG_SIZE), (128, 128, 128))
         return self.transform(img), self.labels[idx]
@@ -236,13 +235,13 @@ class OrangDataset(Dataset):
 def get_transforms():
     norm = T.Normalize([0.485, 0.456, 0.406], [0.229, 0.224, 0.225])
 
-    # Augmentation forte — clé pour la généralisation sur petit dataset
+    # Strong augmentation — key for generalisation on small datasets
     train_tf = T.Compose([
         T.RandomResizedCrop(IMG_SIZE, scale=(0.60, 1.0), ratio=(0.85, 1.15)),
         T.RandomHorizontalFlip(p=0.5),
         T.RandomVerticalFlip(p=0.05),
         T.RandomRotation(degrees=20),
-        # Simule conditions zoo : éclairage variable, vitre, reflets
+        # Simulates varied lighting, glass reflections, real-world conditions
         T.ColorJitter(brightness=0.4, contrast=0.4, saturation=0.25, hue=0.08),
         T.RandomGrayscale(p=0.05),
         T.RandomPerspective(distortion_scale=0.25, p=0.3),
@@ -268,8 +267,8 @@ def get_transforms():
 
 def make_sampler(labels):
     counts = Counter(labels)
-    poids  = {c: 1.0 / counts[c] for c in counts}
-    sample_weights = [poids[l] for l in labels]
+    weights  = {c: 1.0 / counts[c] for c in counts}
+    sample_weights = [weights[l] for l in labels]
     return WeightedRandomSampler(
         weights=sample_weights,
         num_samples=len(sample_weights),
@@ -364,8 +363,8 @@ def train_epoch(model, loader, optimizer, use_mixup):
 
         elapsed = time.time() - t0
         eta = elapsed / (i + 1) * (len(loader) - i - 1)
-        barre(i + 1, len(loader),
-              suffix=f"loss={total_loss/total:.4f}  acc={correct/total*100:.1f}%  ETA={fmt_temps(eta)}")
+        progress_bar(i + 1, len(loader),
+              suffix=f"loss={total_loss/total:.4f}  acc={correct/total*100:.1f}%  ETA={fmt_time(eta)}")
 
     print()
     return total_loss / total, correct / total
@@ -394,7 +393,7 @@ def val_epoch(model, loader):
         all_labs.extend(labs.cpu().numpy())
         all_confs.extend(confs.cpu().numpy())
 
-        barre(i + 1, len(loader),
+        progress_bar(i + 1, len(loader),
               suffix=f"loss={total_loss/total:.4f}  acc={correct/total*100:.1f}%")
 
     print()
@@ -405,8 +404,8 @@ def val_epoch(model, loader):
 # BOUCLE D'ENTRAÎNEMENT PRINCIPALE
 # =============================================================================
 
-def entrainer(model, train_loader, val_loader, n_classes):
-    historique = {'train_loss': [], 'val_loss': [], 'train_acc': [], 'val_acc': []}
+def train_model(model, train_loader, val_loader, n_classes):
+    history = {'train_loss': [], 'val_loss': [], 'train_acc': [], 'val_acc': []}
     best_val_acc   = 0.0
     best_state     = None
     patience_count = 0
@@ -414,7 +413,7 @@ def entrainer(model, train_loader, val_loader, n_classes):
     # ──────────────────────────────────────────────
     # PHASE 1 — Backbone gelé, tête seulement
     # ──────────────────────────────────────────────
-    titre(f"PHASE 1 / 2 — TÊTE SEULEMENT  ({EPOCHS_FREEZE} epochs)")
+    title(f"PHASE 1 / 2 — HEAD ONLY  ({EPOCHS_FREEZE} epochs)")
     print(f"  Backbone ImageNet gelé — LR tête = {LR_HEAD}")
     print(f"  Pas de Mixup en phase 1 (stabilise la convergence initiale)")
 
@@ -429,15 +428,15 @@ def entrainer(model, train_loader, val_loader, n_classes):
 
     t_phase1 = time.time()
     for epoch in range(1, EPOCHS_FREEZE + 1):
-        sous_titre(f"Epoch {epoch}/{EPOCHS_FREEZE}  [Phase 1 — Freeze]")
+        subtitle(f"Epoch {epoch}/{EPOCHS_FREEZE}  [Phase 1 — Frozen backbone]")
         t_loss, t_acc = train_epoch(model, train_loader, optimizer, use_mixup=False)
         v_loss, v_acc, _, _, _ = val_epoch(model, val_loader)
         scheduler.step()
 
-        historique['train_loss'].append(t_loss)
-        historique['val_loss'].append(v_loss)
-        historique['train_acc'].append(t_acc)
-        historique['val_acc'].append(v_acc)
+        history['train_loss'].append(t_loss)
+        history['val_loss'].append(v_loss)
+        history['train_acc'].append(t_acc)
+        history['val_acc'].append(v_acc)
 
         if v_acc > best_val_acc:
             best_val_acc = v_acc
@@ -446,12 +445,12 @@ def entrainer(model, train_loader, val_loader, n_classes):
 
         elapsed = time.time() - t_phase1
         eta_p1  = elapsed / epoch * (EPOCHS_FREEZE - epoch)
-        print(f"  Elapsed : {fmt_temps(elapsed)}  |  ETA phase 1 : {fmt_temps(eta_p1)}")
+        print(f"  Elapsed : {fmt_time(elapsed)}  |  ETA phase 1 : {fmt_time(eta_p1)}")
 
     # ──────────────────────────────────────────────
     # PHASE 2 — Fine-tuning complet, LR différentiel
     # ──────────────────────────────────────────────
-    titre(f"PHASE 2 / 2 — FINE-TUNING COMPLET  (max {EPOCHS_UNFREEZE} epochs)")
+    title(f"PHASE 2 / 2 — FULL FINE-TUNING  (max {EPOCHS_UNFREEZE} epochs)")
     print(f"  LR backbone = {LR_BACKBONE}  |  LR tête = {LR_HEAD}")
     print(f"  Mixup α={MIXUP_ALPHA}  |  Early stop patience={PATIENCE}")
     print(f"  La phase 2 s'arrête automatiquement si pas d'amélioration\n")
@@ -464,7 +463,7 @@ def entrainer(model, train_loader, val_loader, n_classes):
 
     t_phase2 = time.time()
     for epoch in range(1, EPOCHS_UNFREEZE + 1):
-        sous_titre(
+        subtitle(
             f"Epoch {epoch}/{EPOCHS_UNFREEZE}  [Phase 2]  "
             f"patience {patience_count}/{PATIENCE}"
         )
@@ -472,10 +471,10 @@ def entrainer(model, train_loader, val_loader, n_classes):
         v_loss, v_acc, preds_v, labs_v, confs_v = val_epoch(model, val_loader)
         scheduler.step()
 
-        historique['train_loss'].append(t_loss)
-        historique['val_loss'].append(v_loss)
-        historique['train_acc'].append(t_acc)
-        historique['val_acc'].append(v_acc)
+        history['train_loss'].append(t_loss)
+        history['val_loss'].append(v_loss)
+        history['train_acc'].append(t_acc)
+        history['val_acc'].append(v_acc)
 
         if v_acc > best_val_acc:
             best_val_acc   = v_acc
@@ -494,29 +493,29 @@ def entrainer(model, train_loader, val_loader, n_classes):
             eta = elapsed_p2 / epoch * remaining
         else:
             eta = 0
-        print(f"  Best = {best_val_acc*100:.2f}%  |  ETA : {fmt_temps(eta)}")
+        print(f"  Best = {best_val_acc*100:.2f}%  |  ETA : {fmt_time(eta)}")
 
     # Recharger le meilleur modèle
     model.load_state_dict(best_state)
     print(f"\n  Meilleur val accuracy : {best_val_acc*100:.2f}%")
-    return model, historique, best_val_acc, preds_v, labs_v, confs_v
+    return model, history, best_val_acc, preds_v, labs_v, confs_v
 
 # =============================================================================
-# CALIBRATION DU SEUIL "INDIVIDU INCONNU"
+# UNKNOWN INDIVIDUAL THRESHOLD CALIBRATION
 # =============================================================================
 
-def calibrer_seuil(confs, preds, labs):
+def calibrate_threshold(confs, preds, labs):
     """
-    Calcule un seuil de rejet basé sur la distribution des confidences.
+    Compute a rejection threshold from the confidence distribution.
 
     Logique :
-      - On cherche le seuil T tel que si conf < T → "inconnu"
+      - Find threshold T such that conf < T → "unknown"
       - On le fixe au 5e percentile des prédictions CORRECTES :
         * 95% des bonnes prédictions passent → très peu de faux rejets
         * Toutes les prédictions trop incertaines sont rejetées
-      - En pratique, de vrais "inconnus" auront une conf << ce seuil
+      - In practice, true unknowns will have conf << this threshold
 
-    Note : Sans images d'inconnus dans le val set, la calibration est
+    Note: Without unknown images in the val set, calibration is
     conservative. Ajuste CONF_SEUIL dans metadata.json si besoin terrain.
     """
     corrects = confs[preds == labs]
@@ -529,37 +528,37 @@ def calibrer_seuil(confs, preds, labs):
         print(f"    Prédictions erronées  — médiane : {np.median(errors):.3f}  "
               f"| max : {errors.max():.3f}")
         pct_erreurs_capturees = (errors < np.percentile(corrects, 5)).mean()
-        print(f"    Erreurs capturées par le seuil p5 : {pct_erreurs_capturees*100:.1f}%")
+        print(f"    Errors captured by p5 threshold : {pct_erreurs_capturees*100:.1f}%")
 
-    seuil = float(np.percentile(corrects, 5))
-    seuil = max(seuil, 0.50)  # jamais en dessous de 50%
-    seuil = round(seuil, 2)
-    print(f"\n  → Seuil calibré : {seuil:.2f}")
-    print(f"    Si conf < {seuil:.2f} → afficher 'Individu non reconnu'")
-    return seuil
+    threshold = float(np.percentile(corrects, 5))
+    threshold = max(threshold, 0.50)  # never below 50%
+    threshold = round(threshold, 2)
+    print(f"\n  -> Threshold calibrated : {threshold:.2f}")
+    print(f"    If conf < {threshold:.2f} -> display 'Unknown individual'")
+    return threshold
 
 # =============================================================================
 # ÉVALUATION FINALE — TEST SET
 # =============================================================================
 
-def evaluer_test(model, test_loader, classes, seuil):
-    titre("ÉVALUATION — TEST SET (données jamais vues)")
+def evaluate_test(model, test_loader, classes, threshold):
+    title("EVALUATION — TEST SET (never-seen data)")
 
     _, acc, preds, labs, confs = val_epoch(model, test_loader)
 
     print(f"\n  Accuracy globale (sans rejet) : {acc*100:.2f}%")
 
-    # Avec rejet "inconnu"
-    mask = confs >= seuil
+    # With unknown rejection
+    mask = confs >= threshold
     if mask.sum() > 0:
         acc_filtre = (preds[mask] == labs[mask]).mean()
-        print(f"  Accuracy avec rejet (≥{seuil:.2f}) : {acc_filtre*100:.2f}%  "
+        print(f"  Accuracy with rejection (≥{threshold:.2f}) : {acc_filtre*100:.2f}%  "
               f"({(1-mask.mean())*100:.1f}% images rejetées)")
     else:
         acc_filtre = acc
 
-    # Détail par individu
-    print(f"\n  {'Individu':<22} {'OK':>5}  {'Tot':>5}  {'Acc':>7}  Barre")
+    # Per-individual breakdown
+    print(f"\n  {'Individual':<22} {'OK':>5}  {'Tot':>5}  {'Acc':>7}  Bar")
     print(f"  {'─'*22}  {'─'*5}  {'─'*5}  {'─'*7}  {'─'*20}")
     for i, cls in enumerate(classes):
         mask_cls = labs == i
@@ -571,14 +570,14 @@ def evaluer_test(model, test_loader, classes, seuil):
         bar   = '█' * int(a * 20) + '░' * (20 - int(a * 20))
         print(f"  {cls:<22} {n_ok:>5}  {n_tot:>5}  {a*100:>6.1f}%  {bar}")
 
-    # Rapport sklearn
+    # Sklearn report
     print(f"\n  Classification report (test set) :\n")
     print(classification_report(labs, preds, target_names=classes, digits=3))
 
     return preds, labs, confs, acc
 
 # =============================================================================
-# EXTRACTION EMBEDDINGS (pour kNN / détection inconnu avancée)
+# EMBEDDING EXTRACTION (for kNN / advanced unknown detection)
 # =============================================================================
 
 @torch.no_grad()
@@ -586,14 +585,14 @@ def extraire_embeddings(model, loader):
     """
     Extrait les vecteurs d'embedding (2048-dim) avant la couche FC.
     Utile pour :
-      1. Détection d'inconnus par distance cosinus (plus robuste que seuil softmax)
-      2. Fine-tuning avec ajout nouveaux individus (kNN dans l'espace d'embedding)
+      1. Unknown detection by cosine distance (more robust than softmax threshold)
+      2. Fine-tuning with new individuals (kNN in embedding space)
     """
     model.eval()
     all_embeds, all_labs = [], []
     feats_buf = []
 
-    # Hook sur avgpool (sortie = vecteur 2048-dim)
+    # Hook on avgpool (output = 2048-dim vector)
     handle = model.avgpool.register_forward_hook(
         lambda m, inp, out: feats_buf.append(out.flatten(1).cpu())
     )
@@ -611,16 +610,16 @@ def extraire_embeddings(model, loader):
 # GRAPHIQUES
 # =============================================================================
 
-def sauvegarder_graphiques(historique, classes, preds_test, labs_test):
+def save_plots(history, classes, preds_test, labs_test):
     OUT_DIR.mkdir(parents=True, exist_ok=True)
 
-    ep = range(1, len(historique['train_loss']) + 1)
+    ep = range(1, len(history['train_loss']) + 1)
     sep_phase = EPOCHS_FREEZE
 
     # ── Courbes loss / accuracy ──────────────────────────────────────
     fig, axes = plt.subplots(1, 2, figsize=(14, 5))
     fig.suptitle(
-        "Entraînement ResNet50 — Orangs-outangs (CNRS IPHC Strasbourg)",
+        "Entraînement ResNet50 — Orangs-outangs ()",
         fontsize=13, fontweight='bold'
     )
 
@@ -628,8 +627,8 @@ def sauvegarder_graphiques(historique, classes, preds_test, labs_test):
         (axes[0], 'train_loss', 'val_loss',  'Loss',         'Loss'),
         (axes[1], 'train_acc',  'val_acc',   'Accuracy (%)', 'Accuracy'),
     ]:
-        y_tr = historique[key_tr]
-        y_va = historique[key_va]
+        y_tr = history[key_tr]
+        y_va = history[key_va]
         if 'acc' in key_tr:
             y_tr = [v * 100 for v in y_tr]
             y_va = [v * 100 for v in y_va]
@@ -671,8 +670,8 @@ def sauvegarder_graphiques(historique, classes, preds_test, labs_test):
 # SAUVEGARDE
 # =============================================================================
 
-def sauvegarder_modele(model, classes, seuil, acc_test,
-                       embed_train, labs_embed, historique):
+def save_model(model, classes, threshold, acc_test,
+                       embed_train, labs_embed, history):
     MODELS_DIR.mkdir(parents=True, exist_ok=True)
 
     # Modèle complet
@@ -681,12 +680,12 @@ def sauvegarder_modele(model, classes, seuil, acc_test,
         'classes':      classes,
         'n_classes':    len(classes),
         'img_size':     IMG_SIZE,
-        'seuil':        float(seuil),
+        'threshold':        float(threshold),
         'acc_test':     float(acc_test),
         'dropout':      DROPOUT,
     }, MODEL_SAVE)
 
-    # Backbone seul (pour fine-tuning avec nouveaux individus)
+    # Backbone only (for fine-tuning with new individuals)
     backbone_state = {
         k: v for k, v in model.state_dict().items() if 'fc' not in k
     }
@@ -699,23 +698,23 @@ def sauvegarder_modele(model, classes, seuil, acc_test,
         'classes':    classes,
     }, EMBED_SAVE)
 
-    # Metadata JSON (lisible par les autres scripts)
+    # Metadata JSON (readable by other scripts)
     meta = {
         "timestamp":       datetime.now().isoformat(timespec='seconds'),
         "classes":         classes,
         "n_classes":       len(classes),
         "img_size":        IMG_SIZE,
-        "seuil_inconnu":   float(seuil),
+        "unknown_threshold":   float(threshold),
         "acc_test_pct":    round(float(acc_test) * 100, 2),
         "architecture":    "ResNet50 IMAGENET1K_V2",
         "batch_size":      BATCH_SIZE,
         "label_smoothing": LABEL_SMOOTH,
         "mixup_alpha":     MIXUP_ALPHA,
         "dropout":         DROPOUT,
-        "best_val_acc":    round(max(historique['val_acc']) * 100, 2),
-        "epochs_trained":  len(historique['val_acc']),
-        "note_inconnu":    f"Si softmax_max < {seuil:.2f} → individu inconnu",
-        "ajouter_individu": "Voir instructions en bas de 4_train_resnet.py",
+        "best_val_acc":    round(max(history['val_acc']) * 100, 2),
+        "epochs_trained":  len(history['val_acc']),
+        "note_unknown":    f"If softmax_max < {threshold:.2f} -> unknown individual",
+        "add_individual": "See instructions at the bottom of 05_train_resnet50.py",
     }
     META_SAVE.write_text(
         json.dumps(meta, indent=2, ensure_ascii=False), encoding='utf-8'
@@ -727,20 +726,20 @@ def sauvegarder_modele(model, classes, seuil, acc_test,
     print(f"  {META_SAVE.name}")
 
 # =============================================================================
-# RAPPORT FINAL
+# FINAL REPORT
 # =============================================================================
 
-def rapport_final(classes, acc_test, seuil, historique, t_total):
-    best_val = max(historique['val_acc']) * 100
-    n_epochs  = len(historique['val_acc'])
+def final_report(classes, acc_test, threshold, history, t_total):
+    best_val = max(history['val_acc']) * 100
+    n_epochs  = len(history['val_acc'])
 
-    titre("RAPPORT FINAL")
-    print(f"  Individus    : {len(classes)}")
+    title("FINAL REPORT")
+    print(f"  Individuals : {len(classes)}")
     print(f"  Epochs       : {n_epochs} ({EPOCHS_FREEZE} freeze + {n_epochs-EPOCHS_FREEZE} unfreeze)")
-    print(f"  Meilleure val acc : {best_val:.2f}%")
-    print(f"  Accuracy test     : {acc_test*100:.2f}%")
-    print(f"  Seuil inconnu     : {seuil:.2f}")
-    print(f"  Temps total       : {fmt_temps(t_total)}")
+    print(f"  Best val acc : {best_val:.2f}%")
+    print(f"  Test accuracy     : {acc_test*100:.2f}%")
+    print(f"  Unknown threshold     : {threshold:.2f}")
+    print(f"  Total time       : {fmt_time(t_total)}")
     print()
 
     if acc_test >= 0.92:
@@ -763,7 +762,7 @@ def rapport_final(classes, acc_test, seuil, historique, t_total):
   │  2. Pipeline vidéo (YOLO + ResNet50)                     │
   │     → python scripts/5_video_pipeline.py                 │
   │                                                          │
-  │  3. Ajouter un nouvel individu (ex: Kawan)               │
+  │  3. Add a new individual (ex: Kawan)               │
   │     → Voir section AJOUT INDIVIDU ci-dessous             │
   └──────────────────────────────────────────────────────────┘
 """)
@@ -780,17 +779,17 @@ def rapport_final(classes, acc_test, seuil, historique, t_total):
   4. Lance 4b_ajouter_individu.py  ← script à créer
 
      Ce script :
-       a) Charge backbone_orangs.pt  (backbone déjà entraîné)
+       a) Charge backbone saved by this script (pre-trained backbone)
        b) Remplace la tête : FC(10) → FC(11)
        c) Initialise le nouveau neurone proprement
        d) Fine-tune UNIQUEMENT la tête (backbone gelé)
           → Durée : ~5-10 minutes seulement
           → Pas besoin de réentraîner tout le modèle
 
-  5. Génère nouveau resnet_orangs.pt + metadata.json
+  5. Génère nouveau resnet_classifier.pt + metadata.json
 
-  DÉTECTION "INCONNU" sur le terrain :
-    Si confidence < {seuil:.2f} → afficher "Individu non reconnu"
+  UNKNOWN DETECTION in the field:
+    If confidence < {threshold:.2f} → display "Unknown individual"
     (Ajuster dans metadata.json si trop/pas assez de rejets)
 
   ═══════════════════════════════════════════════════════════
@@ -803,30 +802,29 @@ def rapport_final(classes, acc_test, seuil, historique, t_total):
 if __name__ == "__main__":
     t_debut = time.time()
 
-    titre("IDENTIFICATION ORANGS-OUTANGS — ResNet50")
-    print(f"  CNRS IPHC Strasbourg | Stage Titouane CPI2")
+    title("WILDLIFE INDIVIDUAL ID — ResNet50")
     print(f"  Device : {DEVICE}")
     if torch.cuda.is_available():
         print(f"  GPU    : {torch.cuda.get_device_name(0)}")
     print(f"  Batch  : {BATCH_SIZE}  |  Seed : {SEED}")
 
     # ── 1. Dataset ─────────────────────────────────────────────────
-    titre("CHARGEMENT DU DATASET")
-    chemins, labels, classes = charger_dataset()
+    title("LOADING DATASET")
+    paths, labels, classes = load_dataset()
     n_classes = len(classes)
-    afficher_distribution(labels, classes)
-    print(f"\n  {len(chemins)} images  |  {n_classes} individus")
+    print_distribution(labels, classes)
+    print(f"\n  {len(paths)} images  |  {n_classes} individuals")
 
     # ── 2. Split ────────────────────────────────────────────────────
-    titre("SPLIT TRAIN / VAL / TEST")
-    tr_p, tr_l, va_p, va_l, te_p, te_l = split_dataset(chemins, labels, classes)
+    title("TRAIN / VAL / TEST SPLIT")
+    tr_p, tr_l, va_p, va_l, te_p, te_l = split_dataset(paths, labels, classes)
 
     # ── 3. Transforms & DataLoaders ─────────────────────────────────
     train_tf, val_tf = get_transforms()
 
-    train_ds = OrangDataset(tr_p, tr_l, train_tf)
-    val_ds   = OrangDataset(va_p, va_l, val_tf)
-    test_ds  = OrangDataset(te_p, te_l, val_tf)
+    train_ds = IndividualDataset(tr_p, tr_l, train_tf)
+    val_ds   = IndividualDataset(va_p, va_l, val_tf)
+    test_ds  = IndividualDataset(te_p, te_l, val_tf)
 
     sampler      = make_sampler(tr_l)
     train_loader = DataLoader(train_ds, batch_size=BATCH_SIZE, sampler=sampler,
@@ -837,7 +835,7 @@ if __name__ == "__main__":
                               num_workers=4, pin_memory=True, persistent_workers=True)
 
     # ── 4. Modèle ───────────────────────────────────────────────────
-    titre("MODÈLE")
+    title("MODEL")
     model  = creer_modele(n_classes)
     n_par  = sum(p.numel() for p in model.parameters())
     n_tr   = sum(p.numel() for p in model.parameters() if p.requires_grad)
@@ -846,38 +844,38 @@ if __name__ == "__main__":
     print(f"  Phase 2  : {n_tr/1e6:.1f}M entraînables (tout)")
 
     # ── 5. Entraînement ─────────────────────────────────────────────
-    model, historique, best_val, preds_v, labs_v, confs_v = entrainer(
+    model, history, best_val, preds_v, labs_v, confs_v = train_model(
         model, train_loader, val_loader, n_classes
     )
 
-    # ── 6. Calibration seuil inconnu ────────────────────────────────
-    titre("CALIBRATION SEUIL INCONNU")
-    seuil = calibrer_seuil(confs_v, preds_v, labs_v)
+    # ── 6. Unknown threshold calibration ────────────────────────────────
+    title("UNKNOWN THRESHOLD CALIBRATION")
+    threshold = calibrate_threshold(confs_v, preds_v, labs_v)
 
     # ── 7. Évaluation test ──────────────────────────────────────────
-    preds_test, labs_test, confs_test, acc_test = evaluer_test(
-        model, test_loader, classes, seuil
+    preds_test, labs_test, confs_test, acc_test = evaluate_test(
+        model, test_loader, classes, threshold
     )
 
-    # ── 8. Embeddings (kNN / future détection inconnu avancée) ──────
-    titre("EXTRACTION EMBEDDINGS TRAIN")
-    print("  (vecteurs 2048-dim pour détection d'inconnus par distance cosinus)")
+    # ── 8. Embeddings (kNN / advanced unknown detection) ──────
+    title("TRAIN EMBEDDINGS EXTRACTION")
+    print("  (2048-dim vectors for unknown detection by cosine distance)")
     embed_train, labs_embed = extraire_embeddings(model, train_loader)
     print(f"  Tenseur : {embed_train.shape}  ({embed_train.shape[0]} images × 2048 dims)")
 
     # ── 9. Graphiques ───────────────────────────────────────────────
-    titre("GRAPHIQUES")
-    sauvegarder_graphiques(historique, classes, preds_test, labs_test)
+    title("PLOTS")
+    save_plots(history, classes, preds_test, labs_test)
     print(f"  Dossier : {OUT_DIR}")
 
     # ── 10. Sauvegarde ──────────────────────────────────────────────
-    titre("SAUVEGARDE")
-    sauvegarder_modele(model, classes, seuil, acc_test,
-                       embed_train, labs_embed, historique)
+    title("SAVING")
+    save_model(model, classes, threshold, acc_test,
+                       embed_train, labs_embed, history)
 
     # ── 11. Rapport ─────────────────────────────────────────────────
     t_total = time.time() - t_debut
-    rapport_final(classes, acc_test, seuil, historique, t_total)
+    final_report(classes, acc_test, threshold, history, t_total)
 
 # =============================================================================
 # FIN DU SCRIPT
@@ -885,10 +883,10 @@ if __name__ == "__main__":
 #
 # PERFORMANCES ATTENDUES (sur tes 1986 images corrigées à la main) :
 #
-#   Individus > 150 images (Auti, Mathai, Molly, PULCO, Sari, Sinta, Ujian) :
+#   Individuals > 150 images (Auti, Mathai, Molly, PULCO, Sari, Sinta, Ujian) :
 #     → Accuracy individuelle : 88-95%
 #
-#   Individus < 100 images (Jula=63, NOAH=76, PUTRI=56) :
+#   Individuals < 100 images (Jula=63, NOAH=76, PUTRI=56) :
 #     → Accuracy individuelle : 70-85%
 #     → Ce n'est pas un bug : le modèle est limité par le dataset
 #     → Solution : photographier davantage Jula/PUTRI/NOAH
@@ -897,7 +895,7 @@ if __name__ == "__main__":
 #
 #   Pourquoi pas 99% comme YOLO ?
 #     YOLO détecte UNE classe (visage) sur 1986 images → tâche simple
-#     ResNet distingue 10 individus → tâche bien plus difficile
+#     ResNet distinguishes 10 individuals → tâche bien plus difficile
 #     Pour comparaison : Face ID Apple = ~95% en conditions idéales
 #
 #   DURÉE D'ENTRAÎNEMENT (RTX 3050, 1986 images) :

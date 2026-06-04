@@ -1,10 +1,10 @@
 """
-download_models.py — Télécharge les modèles depuis HuggingFace Hub
-Les fichiers .pt ne sont pas dans le repo Git (trop lourds).
+download_models.py — Download the models from HuggingFace Hub
+The .pt files are not in the Git repo (too large).
 
 Usage:
-    python models/download_models.py              # tous les modèles
-    python models/download_models.py --version v3 # V3 seulement
+    python models/download_models.py              # all models
+    python models/download_models.py --version v3 # V3 only
 """
 
 import os
@@ -12,24 +12,23 @@ import sys
 import argparse
 from pathlib import Path
 
-# Forcer le cache sur un disque avec de la place
-# Modifier ces chemins si nécessaire
-HF_CACHE = os.environ.get("HF_HOME", "D:/HuggingFaceCache")
-os.environ["HF_HOME"]    = HF_CACHE
-os.environ["TORCH_HOME"] = os.environ.get("TORCH_HOME", "D:/TorchCache")
+# Bootstrap config_loader so HF/Torch cache is read from config.yaml
+sys.path.insert(0, str(Path(__file__).parent.parent))
+from common.config_loader import apply_cache_env, MODELS_DIR, HF_CACHE
+apply_cache_env()  # sets HF_HOME / TORCH_HOME before huggingface_hub import
 
 try:
     from huggingface_hub import hf_hub_download
 except ImportError:
-    print("[ERR] huggingface_hub non installé")
+    print("[ERR] huggingface_hub not installed")
     print("      pip install huggingface_hub")
     sys.exit(1)
 
 # ==============================================================================
-# CATALOGUE DES MODÈLES
+# MODEL CATALOGUE
 # ==============================================================================
-# TODO: remplacer "titouane-iphc" par votre nom d'utilisateur HuggingFace
-# après avoir uploadé les modèles sur https://huggingface.co
+# TODO: replace "titouane-iphc" with your HuggingFace username
+# after uploading the models to https://huggingface.co
 
 REPO_ID = "tit0000/OrangIdentifier"
 
@@ -49,7 +48,7 @@ MODELS = {
     "resnet50": {
         "file":    "resnet50_classifier_10classes_acc96.pt",
         "dest":    "models/resnet50_classifier_10classes_acc96.pt",
-        "desc":    "ResNet50 classifieur fermé V1 — acc=96.3%",
+        "desc":    "ResNet50 closed-set classifier V1 — acc=96.3%",
         "size_mb": 90,
     },
     "resnet50_backbone": {
@@ -61,13 +60,13 @@ MODELS = {
     "v3": {
         "file":    "megadesc_T_arcface_final_epoch21_acc99.pt",
         "dest":    "models/megadesc_T_arcface_final_epoch21_acc99.pt",
-        "desc":    "MegaDescriptor+ArcFace V3 — acc=99%, rejet BOS=96.3%",
+        "desc":    "MegaDescriptor+ArcFace V3 — acc=99%, BOS rejection=96.3%",
         "size_mb": 105,
     },
     "v4": {
-        "file":    "megadesc_T_arcface_v4_40individus_acc99.pt",
-        "dest":    "models/megadesc_T_arcface_v4_40individus_acc99.pt",
-        "desc":    "MegaDescriptor+ArcFace V4 — 40 individus, acc=99%",
+        "file":    "megadesc_T_arcface_v4_40individuals_acc99.pt",
+        "dest":    "models/megadesc_T_arcface_v4_40individuals_acc99.pt",
+        "desc":    "MegaDescriptor+ArcFace V4 — 40 individuals, acc=99%",
         "size_mb": 105,
     },
 }
@@ -84,9 +83,9 @@ def download(key: str, dry: bool = False):
     m    = MODELS[key]
     dest = Path(m["dest"])
     if dest.exists():
-        print(f"  [OK] {m['dest']} existe déjà")
+        print(f"  [OK] {m['dest']} already exists")
         return
-    print(f"  Téléchargement {m['desc']} (~{m['size_mb']} MB)...")
+    print(f"  Downloading {m['desc']} (~{m['size_mb']} MB)...")
     if not dry:
         dest.parent.mkdir(parents=True, exist_ok=True)
         try:
@@ -98,20 +97,20 @@ def download(key: str, dry: bool = False):
             print(f"  [OK] {path}")
         except Exception as e:
             print(f"  [ERR] {e}")
-            print(f"  Téléchargez manuellement depuis :")
+            print(f"  Download manually from:")
             print(f"  https://huggingface.co/{REPO_ID}/resolve/main/{m['file']}")
 
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--version", default="all",
                         choices=list(VERSION_MAP.keys()),
-                        help="Quelle version télécharger (défaut: all)")
+                        help="Which version to download (default: all)")
     parser.add_argument("--dry-run", action="store_true")
     args = parser.parse_args()
 
     keys = VERSION_MAP[args.version]
     total_mb = sum(MODELS[k]["size_mb"] for k in keys)
-    print(f"  Modèles à télécharger : {len(keys)} ({total_mb} MB estimés)")
+    print(f"  Models to download: {len(keys)} ({total_mb} MB estimated)")
     print(f"  Repo : {REPO_ID}")
     print()
 
@@ -119,7 +118,7 @@ def main():
         download(k, dry=args.dry_run)
 
     print()
-    print("  Liens directs si le téléchargement échoue :")
+    print("  Direct links if the download fails:")
     print(f"  https://huggingface.co/{REPO_ID}")
 
 if __name__ == "__main__":

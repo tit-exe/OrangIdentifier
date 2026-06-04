@@ -1,10 +1,24 @@
 # generate_v4_gallery.py
 # Génère embeddings_v4.json depuis v4_best.pt
-# À lancer AVANT reorganize_final.py --run
+# Run this BEFORE reorganize_final.py --run
 #
 # RUN:
-#   conda activate orangs
-#   python D:\OrangIdentifier\generate_v4_gallery.py
+#   conda activate wildlife-id
+#   python v4_megadesc_arcface_40ind/03_export_gallery.py
+
+import sys
+from pathlib import Path as _Path
+sys.path.insert(0, str(_Path(__file__).parent.parent))
+from common.config_loader import (
+    apply_cache_env,
+    PHOTOS_DIR, WILD_IMAGES_DIR, CROPS_KNOWN_DIR, CROPS_WILD_DIR, CROPS_JSON,
+    MODELS_DIR, OUTPUT_DIR, YOLO_V2_PT,
+    V3_PT, V4_PT, UNKNOWN_THRESHOLD,
+    ARC_SCALE, ARC_MARGIN, MAX_EPOCHS, PATIENCE, PATIENCE_START,
+    LR_BACKBONE, LR_HEAD, BATCH_SIZE, DEVICE, ensure_dirs, to_relative,
+)
+apply_cache_env()  # sets HF_HOME/TORCH_HOME before any heavy imports
+
 
 import os, json, warnings
 warnings.filterwarnings("ignore")
@@ -12,8 +26,8 @@ from pathlib import Path
 from datetime import datetime
 from collections import defaultdict
 
-os.environ["HF_HOME"]    = r"D:\HuggingFaceCache"
-os.environ["TORCH_HOME"] = r"D:\TorchCache"
+
+
 
 import numpy as np
 import torch
@@ -24,10 +38,10 @@ from PIL import Image, ImageFile
 ImageFile.LOAD_TRUNCATED_IMAGES = True
 
 # Paths
-V4_MODEL   = Path(r"D:\OrangIdentifier\V2\V4_improved\models\v4_best.pt")
-ZOO_DIR    = Path(r"D:\OrangIdentifier\DATASET_CLASSIFICATION\raw")
-BOS_DIR    = Path(r"D:\OrangIdentifier\V2\NEW_ORANGS_CROPS")
-OUT_JSON   = Path(r"D:\OrangIdentifier\V2\V4_improved\embeddings\embeddings_v4.json")
+V4_MODEL = V4_PT
+ZOO_DIR = CROPS_KNOWN_DIR
+BOS_DIR = CROPS_KNOWN_DIR
+OUT_JSON = OUTPUT_DIR / "embeddings_v4.json"
 OUT_JSON.parent.mkdir(parents=True, exist_ok=True)
 
 IMG_SIZE   = 224
@@ -132,6 +146,6 @@ tmp.write_text(json.dumps(out, separators=(",",":")), encoding="utf-8")
 tmp.replace(OUT_JSON)
 
 print(f"\nSaved: {OUT_JSON}")
-print(f"  {len(gallery)} individus, {OUT_JSON.stat().st_size/1024:.1f} KB")
+print(f"  {len(gallery)} individuals, {OUT_JSON.stat().st_size/1024:.1f} KB")
 print(f"  Threshold : {thresh}")
 print("Done.")

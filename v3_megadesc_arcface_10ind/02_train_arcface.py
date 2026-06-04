@@ -1,8 +1,8 @@
 """
 V2_5_train_arcface.py
 ======================
-CNRS IPHC Strasbourg — Orang-outan V2 pipeline
-Author: Titouane
+Orang-outan V2 pipeline
+
 
 WHAT THIS DOES
 --------------
@@ -66,9 +66,23 @@ RTX 3050 (4GB VRAM):
 
 RUN
 ---
-  conda activate orangs
-  python D:\OrangIdentifier\V2\scripts\V2_5_train_arcface.py
+  conda activate wildlife-id
+  python v3_megadesc_arcface_10ind/04_train_arcface.py
 """
+
+import sys
+from pathlib import Path as _Path
+sys.path.insert(0, str(_Path(__file__).parent.parent))
+from common.config_loader import (
+    apply_cache_env,
+    PHOTOS_DIR, WILD_IMAGES_DIR, CROPS_KNOWN_DIR, CROPS_WILD_DIR, CROPS_JSON,
+    MODELS_DIR, OUTPUT_DIR, YOLO_V2_PT,
+    V3_PT, V4_PT, UNKNOWN_THRESHOLD,
+    ARC_SCALE, ARC_MARGIN, MAX_EPOCHS, PATIENCE, PATIENCE_START,
+    LR_BACKBONE, LR_HEAD, BATCH_SIZE, DEVICE, ensure_dirs, to_relative,
+)
+apply_cache_env()  # sets HF_HOME/TORCH_HOME before any heavy imports
+
 
 import os
 import sys
@@ -84,8 +98,8 @@ from pathlib import Path
 from datetime import datetime, timedelta
 from collections import Counter, deque
 
-os.environ["HF_HOME"]    = r"D:\HuggingFaceCache"
-os.environ["TORCH_HOME"] = r"D:\TorchCache"
+
+
 
 import numpy as np
 import torch
@@ -103,10 +117,10 @@ warnings.filterwarnings("ignore")
 # PATHS
 # ==============================================================================
 
-V2_BASE      = Path(r"D:\OrangIdentifier\V2")
-ZOO_DIR      = Path(r"D:\OrangIdentifier\DATASET_CLASSIFICATION\raw")
-WILD_DIR     = V2_BASE / "WILD_CROPS" / "crops"
-MODELS_DIR   = V2_BASE / "MODELS"
+V2_BASE = OUTPUT_DIR / "v2"
+ZOO_DIR = CROPS_KNOWN_DIR
+WILD_DIR = CROPS_WILD_DIR
+
 RESULTS_DIR  = V2_BASE / "RESULTS" / "arcface_training"
 EMBED_DIR    = V2_BASE / "EMBEDDINGS"
 
@@ -114,6 +128,9 @@ MODEL_SAVE     = MODELS_DIR / "megadesc_T_arcface.pt"
 BACKBONE_SAVE  = MODELS_DIR / "megadesc_T_arcface_backbone.pt"
 GALLERY_JSON   = EMBED_DIR  / "embeddings_arcface.json"
 METADATA_SAVE  = MODELS_DIR / "arcface_metadata.json"
+# Resume checkpoint — contains optimizer + scheduler state + current epoch
+# Written every epoch so training can be interrupted and resumed cleanly
+RESUME_CKPT    = MODELS_DIR / "megadesc_T_arcface_resume.pt"
 
 for d in [MODELS_DIR, RESULTS_DIR, EMBED_DIR]:
     d.mkdir(parents=True, exist_ok=True)
@@ -682,7 +699,61 @@ def build_gallery(backbone, zoo_tr_paths, zoo_tr_labels, classes, emb_dim):
 # MAIN
 # ==============================================================================
 
-def main():
+def save_resume_ckpt(backbone, arc_loss, optimizer, scheduler, epoch,
+                     best_val_acc, patience_count, history):
+    """
+    Save a full resume checkpoint so training can be restarted exactly
+    from this point with --resume. Written atomically every epoch.
+    Contains everything needed to reconstruct training state:
+    backbone weights, ArcFace head weights, optimizer state, scheduler state,
+    current epoch, best val accuracy, and patience counter.
+    """
+    tmp = RESUME_CKPT.with_suffix(".tmp")
+    torch.save({
+        "backbone_state":   backbone.state_dict(),
+        "arc_loss_state":   arc_loss.state_dict(),
+        "optimizer_state":  optimizer.state_dict(),
+        "scheduler_state":  scheduler.state_dict(),
+        "epoch":            epoch,
+        "best_val_acc":     best_val_acc,
+        "patience_count":   patience_count,
+        "history":          history,
+        "saved_at":         datetime.now().isoformat(),
+    }, tmp)
+    tmp.replace(RESUME_CKPT)
+
+
+def load_resume_ckpt(backbone, arc_loss, optimizer, scheduler):
+    """
+    Load a resume checkpoint produced by save_resume_ckpt().
+    Returns (start_epoch, best_val_acc, patience_count, history).
+    start_epoch is the NEXT epoch to run (checkpoint epoch + 1).
+    Raises RuntimeError if checkpoint is incompatible.
+    """
+    if not RESUME_CKPT.exists():
+        raise FileNotFoundError(
+            f"Resume checkpoint not found: {RESUME_CKPT}\n"
+            "Run without --resume to start a fresh training."
+        )
+    ckpt = torch.load(str(RESUME_CKPT), map_location=DEVICE, weights_only=False)
+    backbone.load_state_dict(ckpt["backbone_state"])
+    arc_loss.load_state_dict(ckpt["arc_loss_state"])
+    optimizer.load_state_dict(ckpt["optimizer_state"])
+    scheduler.load_state_dict(ckpt["scheduler_state"])
+    start_epoch   = int(ckpt["epoch"]) + 1
+    best_val_acc  = float(ckpt.get("best_val_acc", 0.0))
+    patience_count = int(ckpt.get("patience_count", 0))
+    history       = ckpt.get("history", {"train_loss": [], "val_acc": []})
+    saved_at      = ckpt.get("saved_at", "?")
+    print(f"  Resumed from checkpoint: epoch {ckpt['epoch']}")
+    print(f"  Checkpoint saved at    : {saved_at}")
+    print(f"  Best val acc so far    : {best_val_acc*100:.2f}%")
+    print(f"  Patience count         : {patience_count}/{PATIENCE}")
+    print(f"  Resuming at epoch      : {start_epoch}")
+    return start_epoch, best_val_acc, patience_count, history
+
+
+def main(resume: bool = False):
     global _best_model_state, _best_epoch
 
     t0 = time.time()
@@ -690,8 +761,12 @@ def main():
     print("=" * 70)
     print("  ARCFACE FINE-TUNING — MegaDescriptor-T-224")
     print("  Sub-center ArcFace | zoo + wild crops")
-    print("  CNRS IPHC Strasbourg")
+    print("  ")
     print("=" * 70)
+    if resume:
+        print("  Mode: RESUME from checkpoint")
+    else:
+        print("  Mode: fresh training (use --resume to continue an interrupted run)")
     print(f"  Device : {DEVICE}")
     if torch.cuda.is_available():
         props = torch.cuda.get_device_properties(0)
@@ -790,16 +865,32 @@ def main():
 
     scheduler = optim.lr_scheduler.LambdaLR(optimizer, lr_lambda)
 
-    # ── 6. Training loop ──────────────────────────────────────────────────────
-    print("\n" + "=" * 70)
-    print("  TRAINING — Ctrl+C to stop and save best model")
-    print("=" * 70)
-
+    # ── 6. Resume from checkpoint (if --resume) ──────────────────────────────
+    start_epoch    = 1
     best_val_acc   = 0.0
     patience_count = 0
     history        = {"train_loss": [], "val_acc": []}
 
-    for epoch in range(1, MAX_EPOCHS + 1):
+    if resume:
+        print("\n" + "─" * 70)
+        print("  Loading resume checkpoint...")
+        print("─" * 70)
+        try:
+            start_epoch, best_val_acc, patience_count, history = \
+                load_resume_ckpt(backbone, arc_loss, optimizer, scheduler)
+            _best_epoch = start_epoch - 1  # best epoch was before the resume point
+        except FileNotFoundError as e:
+            print(f"\n  ERROR: {e}")
+            sys.exit(1)
+
+    # ── 7. Training loop ──────────────────────────────────────────────────────
+    print("\n" + "=" * 70)
+    print("  TRAINING — Ctrl+C to stop and save best model")
+    if resume:
+        print(f"  Resuming from epoch {start_epoch}/{MAX_EPOCHS}")
+    print("=" * 70)
+
+    for epoch in range(start_epoch, MAX_EPOCHS + 1):
         if _interrupt_flag:
             print("\n  Interrupt detected — stopping training loop.")
             break
@@ -855,6 +946,11 @@ def main():
             eta     = elapsed / epoch * (MAX_EPOCHS - epoch)
             print(f"  ETA: {str(timedelta(seconds=int(eta)))} "
                   f"| Total elapsed: {str(timedelta(seconds=int(elapsed)))}")
+
+            # Save resume checkpoint every epoch (overwrite previous)
+            # Allows clean restart with --resume after any interruption
+            save_resume_ckpt(backbone, arc_loss, optimizer, scheduler,
+                             epoch, best_val_acc, patience_count, history)
 
     # ── 7. Save on interrupt ──────────────────────────────────────────────────
     if _interrupt_flag and not MODEL_SAVE.exists():
@@ -930,4 +1026,17 @@ def main():
 """)
 
 if __name__ == "__main__":
-    main()
+    import argparse
+    parser = argparse.ArgumentParser(
+        description="Train MegaDescriptor-T + Sub-center ArcFace"
+    )
+    parser.add_argument(
+        "--resume", action="store_true",
+        help=(
+            f"Resume training from {RESUME_CKPT.name}. "
+            "The script saves a resume checkpoint after every epoch, so you can "
+            "safely interrupt at any time (Ctrl+C) and restart with --resume."
+        )
+    )
+    args = parser.parse_args()
+    main(resume=args.resume)

@@ -1,24 +1,28 @@
 # -*- coding: utf-8 -*-
 """
-OrangAnnot - Outil d'annotation
-D = Valider | S = Skip | A = Precedent | Z = Reset | Clic droit = Supprimer boite
-Passe automatiquement a l'individu suivant quand l'objectif est atteint.
+annotate_keyboard.py — Keyboard-driven annotation tool
+D = Validate | S = Skip | A = Previous | Z = Reset | Right-click = Delete box
+Automatically moves to the next individual once the target count is reached.
 """
 
+import sys
 import tkinter as tk
 from tkinter import messagebox
 from pathlib import Path
 from PIL import Image, ImageTk
 from collections import defaultdict
 
-IMAGES_DIR = r"D:\OrangIdentifier\DATASET_YOLO\images"
-LABELS_DIR = r"D:\OrangIdentifier\DATASET_YOLO\labels"
-DONE_FILE  = r"D:\OrangIdentifier\DATASET_YOLO\done.txt"
+sys.path.insert(0, str(Path(__file__).parent.parent))
+from common.config_loader import YOLO_DATASET_DIR
 
-OBJECTIF = 30
+IMAGES_DIR = YOLO_DATASET_DIR / "images"
+LABELS_DIR = YOLO_DATASET_DIR / "labels"
+DONE_FILE  = YOLO_DATASET_DIR / "done.txt"
+
+TARGET = 30   # valid images per individual
 
 # =============================================================================
-# DONE.TXT
+# done.txt helpers
 # =============================================================================
 
 def load_done():
@@ -30,45 +34,44 @@ def mark_done(stem):
         f.write(stem + "\n")
 
 # =============================================================================
-# COMPTAGE VALIDES PAR INDIVIDU (uniquement parmi done)
+# COUNT VALID IMAGES PER INDIVIDUAL (from done set only)
 # =============================================================================
 
-def compter_valides(done):
+def count_valid(done):
     labels_dir = Path(LABELS_DIR)
-    c = defaultdict(int)
+    counts = defaultdict(int)
     for stem in done:
         lbl = labels_dir / (stem + ".txt")
         if lbl.exists() and lbl.stat().st_size > 0:
-            c[stem.split("_")[0]] += 1
-    return c
+            counts[stem.split("_")[0]] += 1
+    return counts
 
 # =============================================================================
-# LISTE ORDONNEE
-# Images non traitees, individus sous l'objectif en premier.
-# Quand un individu atteint l'objectif, ses images restantes sont sautees.
+# ORDERED IMAGE LIST
+# Images not yet processed; individuals below target first.
+# Once an individual reaches target, their remaining images are skipped.
 # =============================================================================
 
-def get_images(done, valides):
-    par_ind = defaultdict(list)
+def get_images(done, valid_counts):
+    per_ind = defaultdict(list)
     for p in sorted(Path(IMAGES_DIR).glob("*.jpg")):
-        par_ind[p.stem.split("_")[0]].append(p)
+        per_ind[p.stem.split("_")[0]].append(p)
 
-    # Individus tries par nombre de valides croissant
-    individus = sorted(par_ind.keys(), key=lambda k: valides.get(k, 0))
+    # Sort individuals by number of valid images (ascending — least-done first)
+    individuals = sorted(per_ind.keys(), key=lambda k: valid_counts.get(k, 0))
 
     result = []
-    for ind in individus:
-        # Si cet individu a deja atteint l'objectif, on skip ses images
-        if valides.get(ind, 0) >= OBJECTIF:
+    for ind in individuals:
+        if valid_counts.get(ind, 0) >= TARGET:
             continue
-        for img in par_ind[ind]:
+        for img in per_ind[ind]:
             if img.stem not in done:
                 result.append(img)
 
     return result
 
 # =============================================================================
-# LABELS
+# LABEL HELPERS
 # =============================================================================
 
 def read_label(path, W, H):
@@ -101,17 +104,17 @@ def write_label(path, boxes, W, H):
 class App:
     def __init__(self, root):
         self.root  = root
-        self.root.title("OrangAnnot")
+        self.root.title("AnnotateTool")
         self.root.configure(bg="#111")
         self.root.state('zoomed')
 
-        self.done   = load_done()
-        self.valides = compter_valides(self.done)
-        self.imgs   = get_images(self.done, self.valides)
-        self.idx    = 0
+        self.done         = load_done()
+        self.valid_counts = count_valid(self.done)
+        self.imgs         = get_images(self.done, self.valid_counts)
+        self.idx          = 0
 
-        self.boxes  = []
-        self.orig   = []
+        self.boxes   = []
+        self.orig    = []
         self.W = self.H = 1
         self.sc = 1.0
         self.ox = self.oy = 0
@@ -125,11 +128,10 @@ class App:
         self.show()
 
     def _refresh_list(self):
-        """Recalcule la liste apres chaque action."""
-        self.valides = compter_valides(self.done)
-        nouvelles = get_images(self.done, self.valides)
-        self.imgs  = nouvelles
-        self.idx   = 0
+        """Recompute image list after each action."""
+        self.valid_counts = count_valid(self.done)
+        self.imgs = get_images(self.done, self.valid_counts)
+        self.idx  = 0
 
     # =========================================================================
     # UI
@@ -157,7 +159,7 @@ class App:
         self.l_rat.pack(side=tk.LEFT, padx=12)
 
         tk.Label(top,
-            text="D Valider   S Skip   A Precedent   Z Reset   Clic droit Supprimer",
+            text="D Validate   S Skip   A Previous   Z Reset   Right-click Delete box",
             bg="#1e1e1e", fg="#444444", font=("Consolas", 9)
         ).pack(side=tk.RIGHT, padx=12)
 
@@ -183,9 +185,9 @@ class App:
         self.cv.bind("<ButtonPress-3>",   self.m_right)
 
     def _binds(self):
-        self.root.bind("d",       lambda e: self.valider())
-        self.root.bind("D",       lambda e: self.valider())
-        self.root.bind("<Right>", lambda e: self.valider())
+        self.root.bind("d",       lambda e: self.validate())
+        self.root.bind("D",       lambda e: self.validate())
+        self.root.bind("<Right>", lambda e: self.validate())
         self.root.bind("s",       lambda e: self.skip())
         self.root.bind("S",       lambda e: self.skip())
         self.root.bind("a",       lambda e: self.prev())
@@ -196,29 +198,28 @@ class App:
         self.root.bind("<Escape>", lambda e: self.quit())
 
     # =========================================================================
-    # AFFICHAGE
+    # DISPLAY
     # =========================================================================
 
     def show(self):
-        # Verifier si tous les individus ont atteint l'objectif
         all_inds = set(p.stem.split("_")[0]
                        for p in Path(IMAGES_DIR).glob("*.jpg"))
-        tous_ok = all(self.valides.get(k, 0) >= OBJECTIF for k in all_inds)
+        all_done = all(self.valid_counts.get(k, 0) >= TARGET for k in all_inds)
 
-        if tous_ok:
+        if all_done:
             messagebox.showinfo(
-                "Objectif atteint",
-                "Tous les individus ont atteint 30 images valides.\n"
-                "Lance 2_train_yolo.py !"
+                "Target reached",
+                "All individuals have reached 30 valid images.\n"
+                "Run 02_train_yolo_nano.py!"
             )
             self.root.quit()
             return
 
         if self.idx >= len(self.imgs):
             messagebox.showinfo(
-                "Fin de liste",
-                "Plus d'images a annoter pour les individus en manque.\n"
-                "Lance 2_train_yolo.py !"
+                "End of list",
+                "No more images to annotate for individuals below target.\n"
+                "Run 02_train_yolo_nano.py!"
             )
             self.root.quit()
             return
@@ -241,24 +242,24 @@ class App:
         self.bi    = 0
 
         ind     = p.stem.split("_")[0]
-        nb_ind  = self.valides.get(ind, 0)
-        manque  = max(0, OBJECTIF - nb_ind)
-        total_v = sum(self.valides.values())
+        nb_ind  = self.valid_counts.get(ind, 0)
+        needed  = max(0, TARGET - nb_ind)
+        total_v = sum(self.valid_counts.values())
 
         self.l_pos.config(text=f"{self.idx+1}/{len(self.imgs)}")
         self.l_ind.config(
-            text=f"  {ind}  ({nb_ind}/{OBJECTIF})  encore {manque}",
-            fg="#ffaa00" if manque > 0 else "#00cc66"
+            text=f"  {ind}  ({nb_ind}/{TARGET})  need {needed} more",
+            fg="#ffaa00" if needed > 0 else "#00cc66"
         )
         self.l_obj.config(
-            text=f"  Valides: {total_v}   Traites: {len(self.done)}",
+            text=f"  Valid: {total_v}   Processed: {len(self.done)}",
             fg="#00cc66"
         )
 
         stats = "  ".join(
-            f"{k}:{self.valides.get(k,0)}"
-            + ("" if self.valides.get(k,0) >= OBJECTIF
-               else f"(-{OBJECTIF - self.valides.get(k,0)})")
+            f"{k}:{self.valid_counts.get(k,0)}"
+            + ("" if self.valid_counts.get(k,0) >= TARGET
+               else f"(-{TARGET - self.valid_counts.get(k,0)})")
             for k in sorted(all_inds)
         )
         self.l_stat.config(text=f"Image {self.idx+1}/{len(self.imgs)}")
@@ -290,16 +291,16 @@ class App:
             r = (x2-x1)/(y2-y1) if (y2-y1) > 0 else 0
             self.cv.create_text(bx1+4, by1+4, text=f"{r:.2f}",
                                 anchor=tk.NW, fill=col, font=("Consolas", 9))
-            self.l_rat.config(text=f"Ratio L/H: {r:.2f}   (vise 1.0-1.5)")
+            self.l_rat.config(text=f"W/H ratio: {r:.2f}  (target 1.0-1.5)")
 
         if not self.boxes:
             self.cv.create_text(cw//2, ch//2,
-                text="Aucune boite -- Glisse pour creer -- S pour skipper",
+                text="No box — drag to create — S to skip",
                 fill="#ff4466", font=("Consolas", 13))
-            self.l_rat.config(text="Aucune boite")
+            self.l_rat.config(text="No box")
 
     # =========================================================================
-    # SOURIS
+    # MOUSE
     # =========================================================================
 
     def to_img(self, cx, cy):
@@ -385,14 +386,14 @@ class App:
     # ACTIONS
     # =========================================================================
 
-    def valider(self):
+    def validate(self):
         p  = self.imgs[self.idx]
         lp = Path(LABELS_DIR) / (p.stem + ".txt")
         write_label(lp, self.boxes, self.W, self.H)
         if p.stem not in self.done:
             self.done.add(p.stem)
             mark_done(p.stem)
-        # Recalculer — si l'individu a atteint l'objectif, la liste se recharge
+        # Recompute list — if individual reached target, list refreshes
         self._refresh_list()
         self.bi = 0
         self.show()
@@ -414,7 +415,7 @@ class App:
         self.boxes = [list(b) for b in self.orig]; self.bi = 0; self.redraw()
 
     def quit(self):
-        if messagebox.askyesno("Quitter", "Quitter ?"):
+        if messagebox.askyesno("Quit", "Quit the annotator?"):
             self.root.quit()
 
 

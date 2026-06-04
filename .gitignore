@@ -1,0 +1,63 @@
+# OrangIdentifier .gitignore
+# Photos, crops, and model weights are NOT versioned.
+# Download models with: python models/download_models.py
+
+# Data (photos, crops — never in the repo)
+data/photos/
+data/wild_images/raw/*
+data/crops/known/
+data/crops/wild/
+data/yolo_dataset/
+data/yolo_dataset_split/
+data/crops.json
+
+# Keep empty folder structure and the wild images instructions
+!data/**/.gitkeep
+!data/wild_images/raw/README.md
+
+# Model weights (too large — hosted on HuggingFace)
+models/*.pt
+models/*.pth
+
+# Training outputs
+output/
+runs/
+
+# HuggingFace / PyTorch caches (if redirected inside the repo)
+HuggingFaceCache/
+TorchCache/
+hf_cache/
+torch_cache/
+
+# Python
+__pycache__/
+*.py[cod]
+
+# Virtual environments
+.venv/
+venv/
+env/
+.env/
+
+# Jupyter
+.ipynb_checkpoints/
+*.ipynb
+
+# OS
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# Editors
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# Temporary / atomic write artifacts
+*.tmp
+*.bak
+
+# Logs
+*.log
+benchmark_log.txt

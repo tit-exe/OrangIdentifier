@@ -1,14 +1,28 @@
 # V3_test_bos_baseline.py
-# CNRS IPHC Strasbourg - Orang-outan V2 pipeline
-# Author: Titouane
+# Orang-outan V2 pipeline
+# 
 #
 # READ-ONLY diagnostic: tests current model against 1622 BOS crops.
 # The 30 BOS individuals were NEVER seen during training.
 # Goal: measure if the current model correctly rejects them as "unknown".
 #
 # RUN:
-#   conda activate orangs
-#   python D:\OrangIdentifier\V2\scripts\V3_test_bos_baseline.py
+#   conda activate wildlife-id
+#   python v3_megadesc_arcface_10ind/06_test_open_set.py
+
+import sys
+from pathlib import Path as _Path
+sys.path.insert(0, str(_Path(__file__).parent.parent))
+from common.config_loader import (
+    apply_cache_env,
+    PHOTOS_DIR, WILD_IMAGES_DIR, CROPS_KNOWN_DIR, CROPS_WILD_DIR, CROPS_JSON,
+    MODELS_DIR, OUTPUT_DIR, YOLO_V2_PT,
+    V3_PT, V4_PT, UNKNOWN_THRESHOLD,
+    ARC_SCALE, ARC_MARGIN, MAX_EPOCHS, PATIENCE, PATIENCE_START,
+    LR_BACKBONE, LR_HEAD, BATCH_SIZE, DEVICE, ensure_dirs, to_relative,
+)
+apply_cache_env()  # sets HF_HOME/TORCH_HOME before any heavy imports
+
 
 import os
 import sys
@@ -17,8 +31,8 @@ from pathlib import Path
 from collections import defaultdict, Counter
 from datetime import datetime
 
-os.environ["HF_HOME"]    = r"D:\HuggingFaceCache"
-os.environ["TORCH_HOME"] = r"D:\TorchCache"
+
+
 
 import numpy as np
 import torch
@@ -32,9 +46,9 @@ ImageFile.LOAD_TRUNCATED_IMAGES = True
 # PATHS (all read-only)
 # ==============================================================================
 
-MODEL_PATH    = Path(r"D:\OrangIdentifier\V2\MODELS\megadesc_T_arcface.pt")
-ZOO_DIR       = Path(r"D:\OrangIdentifier\DATASET_CLASSIFICATION\raw")
-BOS_DIR       = Path(r"D:\OrangIdentifier\V2\NEW_ORANGS_CROPS")
+MODEL_PATH = V3_PT
+ZOO_DIR = CROPS_KNOWN_DIR
+BOS_DIR = CROPS_KNOWN_DIR
 BOS_JSON      = BOS_DIR / "boxes_new_orangs.json"
 
 IMG_SIZE      = 224

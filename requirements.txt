@@ -1,6 +1,6 @@
 # Testé sur Python 3.10, Windows 11, RTX 3050 4GB
-# conda create -n orangs python=3.10
-# conda activate orangs
+# conda create -n wildlife-id python=3.10
+# conda activate wildlife-id
 # pip install -r requirements.txt
 
 # Deep learning

@@ -1,28 +1,28 @@
-# common/ — Outils partagés entre toutes les versions
+# common/
 
-## review_crops.py — Reviewer unifié
-Remplace tous les anciens reviewers (3b_reviser_faces.py, V2_4_review_crops.py, etc.)
+## review_crops.py
+Replaces all the old reviewers (3b_reviser_faces.py, V2_4_review_crops.py, etc.)
 
 ```bash
-python common/review_crops.py <dossier_crops>
-# ou avec un JSON de boxes existant :
-python common/review_crops.py <dossier_crops> --boxes boxes.json
+python common/review_crops.py <crops_folder>
+# or with an existing boxes JSON:
+python common/review_crops.py <crops_folder> --json boxes.json
 ```
 
-**Contrôles :**
-- `Espace` — valider le crop
-- `S` — passer (skip)
-- `Suppr` — supprimer (crop + entrée JSON)
-- `←` / `→` — naviguer
-- Handles sur la bbox pour redimensionner
+**Controls:**
+- `Enter` : validate the crop
+- `S` : skip
+- `Del` / `X` : delete (crop + JSON entry)
+- `A` / `←` : previous
+- Handles on the bounding box to resize
 
-## benchmark.py — Comparaison V1-V4
+## benchmark.py
 
 ```bash
 python common/benchmark.py --models-dir models/
 ```
 
-## download_models.py — Téléchargement depuis HuggingFace
+## download_models.py
 
 ```bash
 python models/download_models.py --version all

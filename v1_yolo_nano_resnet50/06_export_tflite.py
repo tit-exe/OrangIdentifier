@@ -20,7 +20,7 @@ but does NOT embed the names in the .pt file itself. The Android app needs
 labels.txt to map index 0 → "Auti", index 1 → "Jula", etc.
 The order is determined by Python's sorted() on the dataset folder names.
 
-REQUIREMENTS (install in your conda env 'orangs')
+REQUIREMENTS (install in your conda env 'wildlife-id')
 ---------------------------------------------------
   pip install onnx onnx-tf tensorflow onnxruntime ai-edge-torch
 
@@ -30,13 +30,13 @@ REQUIREMENTS (install in your conda env 'orangs')
 
 OUTPUT
 ------
-  D:/OrangIdentifier/ANDROID_EXPORT/
+  output/android_export/
     yolov8_detector.tflite
     resnet50_classifier.tflite
     labels.txt
     metadata.json            ← human-readable info about the models
 
-  D:/OrangIdentifier/primate_models_android.zip  ← import this in the app
+  output/android_models.zip  ← import this in the app
 """
 
 import os
@@ -50,6 +50,11 @@ import subprocess
 from pathlib import Path
 from datetime import datetime
 
+sys.path.insert(0, str(Path(__file__).parent.parent))
+from common.config_loader import (
+    YOLO_V2_PT, MODELS_DIR, CROPS_KNOWN_DIR, OUTPUT_DIR, ensure_dirs
+)
+
 import torch
 import torch.nn as nn
 import torchvision.models as models
@@ -58,14 +63,14 @@ from PIL import Image
 from ultralytics import YOLO
 
 # ==============================================================================
-# CONFIGURATION — edit these paths if needed
+# CONFIGURATION
 # ==============================================================================
 
-YOLO_PT      = r"D:\OrangIdentifier\MODELS\yolo_orangs_v2\best.pt"
-RESNET_PT    = r"D:\OrangIdentifier\MODELS\resnet_orangs.pt"
-DATASET_DIR  = r"D:\OrangIdentifier\DATASET_CLASSIFICATION\train"  # used to auto-detect class order
-EXPORT_DIR   = r"D:\OrangIdentifier\ANDROID_EXPORT"
-ZIP_PATH     = r"D:\OrangIdentifier\primate_models_android"
+YOLO_PT     = YOLO_V2_PT
+RESNET_PT   = MODELS_DIR / "resnet50_classifier.pt"
+DATASET_DIR = CROPS_KNOWN_DIR   # used to auto-detect class order from folder names
+EXPORT_DIR  = OUTPUT_DIR / "android_export"
+ZIP_PATH    = OUTPUT_DIR / "android_models"
 
 DETECTOR_NAME   = "yolov8_detector.tflite"
 CLASSIFIER_NAME = "resnet50_classifier.tflite"

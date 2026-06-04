@@ -1,38 +1,43 @@
-# config.yaml — adapter ces valeurs pour un nouveau projet
-# ============================================================
-# Pour utiliser sur une autre espèce : changer species, les chemins,
-# et lancer les scripts dans l'ordre indiqué dans PIPELINE.md
+# config.yaml — single configuration file for the entire pipeline
+# ================================================================
+# To adapt to a new species: edit species, project_name, and optionally
+# the cache dirs. All other paths are relative to the repo root and
+# should NOT be changed unless you reorganize the data/ folder.
+# ================================================================
 
-# --- Projet ---
-species:      "Pongo pygmaeus"          # espèce (pour les logs)
-project_name: "orangutan_borneo"        # nom du projet
+# --- Project ---
+species:      "Pongo pygmaeus"   # species name (used in logs and exports)
+project_name: "orangutan_borneo" # used as filename prefix for gallery exports
 
-# --- Chemins (adapter à votre machine) ---
-# Mettre des chemins absolus ou relatifs au dossier du projet
-raw_photos_dir:   "data/photos"         # dossiers = 1 individu par dossier
-wild_images_dir:  "data/wild_internet"  # images internet non labelisées
-output_dir:       "output"              # crops, modèles, résultats
+# --- Data paths (relative to repo root, do NOT use absolute paths) ---
+raw_photos_dir:  "data/photos"          # one subfolder per individual
+wild_images_dir: "data/wild_images/raw" # unlabeled internet images (background class)
+output_dir:      "output"               # training outputs, results, exports
+
+# --- HuggingFace / PyTorch cache ---
+# Uncomment and edit ONLY if you want to redirect downloads to a specific drive.
+# Default (commented out): uses OS standard cache (~/.cache/huggingface and ~/.cache/torch).
+# On Windows with a small C: drive, point to a larger drive:
+#
+# hf_cache_dir:    "D:/HuggingFaceCache"
+# torch_cache_dir: "D:/TorchCache"
 
 # --- GPU & performance ---
-device:       "auto"      # auto | cuda | cpu
-batch_size:   32          # réduire à 16 si VRAM < 4 GB
+device:     "auto"   # auto | cuda | cpu
+batch_size: 32       # reduce to 16 if VRAM < 4 GB
 
-# --- Cache (évite de remplir C:) ---
-hf_cache_dir:   "D:/HuggingFaceCache"   # modèles HuggingFace
-torch_cache_dir: "D:/TorchCache"        # modèles PyTorch
-
-# --- YOLO (détection de visages) ---
-yolo_confidence:  0.30    # seuil de confiance détection
-yolo_face_margin: 0.15    # marge autour du crop (15%)
+# --- YOLO (face detection) ---
+yolo_confidence:  0.30   # detection confidence threshold
+yolo_face_margin: 0.05   # margin around detected box (5% of box size)
 
 # --- MegaDescriptor + ArcFace (V3/V4) ---
-arc_scale:    64
-arc_margin:   0.50
-max_epochs:   100
-patience:     25
-patience_start: 35        # early stopping commence à partir de cette epoch
-lr_backbone:  1e-5
-lr_head:      5e-4
+arc_scale:      64
+arc_margin:     0.50
+max_epochs:     100
+patience:       25
+patience_start: 35       # early stopping starts from this epoch
+lr_backbone:    1.0e-5
+lr_head:        5.0e-4
 
-# --- Galerie open-set ---
-unknown_threshold: 0.22   # similarité cosinus sous laquelle = inconnu
+# --- Open-set gallery ---
+unknown_threshold: 0.22  # cosine similarity below which = unknown individual
