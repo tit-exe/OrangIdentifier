@@ -41,3 +41,21 @@ lr_head:        5.0e-4
 
 # --- Open-set gallery ---
 unknown_threshold: 0.22  # cosine similarity below which = unknown individual
+
+# --- V5 (invariance + curriculum) and V6 (production) parameters ---
+arc_margin_late:          0.35    # tighter angular margin used from V5 onward
+k_zoo:                    2       # sub-centers per zoo individual (V5/V6)
+k_bos:                    1       # sub-centers per BOS individual (V5)
+k_wild:                   5       # sub-centers for the wild/background class
+exemplars_per_individual: 25      # V6 gallery: reference vectors per individual
+unknown_threshold_v6:     0.5371  # calibrated acceptance threshold of the deployed V6 gallery
+
+# --- Individual groups ---
+# Which names belong to which set. Lets V5/V6 split zoo / BOS / new by name,
+# so all crops can live together under data/crops/ without separate folders.
+groups:
+  zoo: [Auti, Jula, Mathai, Molly, NOAH, PULCO, PUTRI, Sari, Sinta, Ujian]
+  new: [Bukit, Indah, Kembali, Rosa, Yori]
+  bos: [Benni, Berunay, Dinda, Farida, Hanau, Himba, Jati, Jessy, Jiga, Junior,
+        Kalanis, Kembew, Kheal, Lanting, Laura, Longkong, Luti, "Mama Lasa", Menuk, Moci,
+        Negeri, Nett, Nita, Obama, Panda, Rongda, Samoi, Semeru, Timpah, Winey]

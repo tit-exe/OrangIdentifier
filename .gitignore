@@ -1,11 +1,14 @@
 # OrangIdentifier .gitignore
 # Photos, crops, and model weights are NOT versioned.
+# Heavy assets are hosted on Hugging Face: https://huggingface.co/tit0000/OrangIdentifier
 # Download models with: python models/download_models.py
 
 # Data (photos, crops — never in the repo)
 data/photos/
 data/wild_images/raw/*
 data/crops/known/
+data/crops/bos/
+data/crops/new/
 data/crops/wild/
 data/yolo_dataset/
 data/yolo_dataset_split/
@@ -18,6 +21,8 @@ data/crops.json
 # Model weights (too large — hosted on HuggingFace)
 models/*.pt
 models/*.pth
+models/*.tflite
+models/.cache/
 
 # Training outputs
 output/

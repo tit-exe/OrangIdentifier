@@ -441,7 +441,7 @@ def train_model(model, train_loader, val_loader, n_classes):
         if v_acc > best_val_acc:
             best_val_acc = v_acc
             best_state   = {k: v.clone() for k, v in model.state_dict().items()}
-            print(f"  ★ Nouveau meilleur val acc : {best_val_acc*100:.2f}%")
+            print(f"  * Nouveau meilleur val acc : {best_val_acc*100:.2f}%")
 
         elapsed = time.time() - t_phase1
         eta_p1  = elapsed / epoch * (EPOCHS_FREEZE - epoch)
@@ -480,7 +480,7 @@ def train_model(model, train_loader, val_loader, n_classes):
             best_val_acc   = v_acc
             best_state     = {k: v.clone() for k, v in model.state_dict().items()}
             patience_count = 0
-            print(f"  ★ Nouveau meilleur : {best_val_acc*100:.2f}%  [sauvegardé]")
+            print(f"  * Nouveau meilleur : {best_val_acc*100:.2f}%  [sauvegardé]")
         else:
             patience_count += 1
             if patience_count >= PATIENCE:

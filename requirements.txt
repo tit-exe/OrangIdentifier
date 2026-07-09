@@ -1,6 +1,6 @@
-# Testé sur Python 3.10, Windows 11, RTX 3050 4GB
-# conda create -n wildlife-id python=3.10
-# conda activate wildlife-id
+# Tested on Python 3.10, Windows 11, RTX 3050 4 GB
+# conda create -n orangs python=3.10
+# conda activate orangs
 # pip install -r requirements.txt
 
 # Deep learning
@@ -18,12 +18,12 @@ numpy==1.26.4
 scikit-learn==1.4.2
 umap-learn==0.5.6
 
-# Visualisation
+# Visualization
 matplotlib==3.9.0
 
 # UI (reviewer)
 PyQt5==5.15.10
 
-# Utilitaires
+# Utilities
 tqdm==4.66.4
 huggingface_hub==0.23.2

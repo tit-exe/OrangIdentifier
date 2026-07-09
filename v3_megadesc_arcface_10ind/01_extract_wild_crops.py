@@ -62,7 +62,7 @@ WHAT IT DOES
 
 RUN
 ---
-    conda activate wildlife-id
+    conda activate orangs
     python data/scripts\V2_3_extract_faces_wild.py
 """
 

@@ -13,7 +13,7 @@
 #   5. wild_crops_rejection.png  - how wild internet crops are handled
 #
 # RUN:
-#   conda activate wildlife-id
+#   conda activate orangs
 #   pip install umap-learn --break-system-packages  (if not installed)
 #   python v3_megadesc_arcface_10ind/07_visualize.py
 

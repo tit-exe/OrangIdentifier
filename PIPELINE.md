@@ -58,22 +58,37 @@ python v4_megadesc_arcface_40ind/02_train_improved.py --resume  # resume if inte
 python v4_megadesc_arcface_40ind/03_export_gallery.py     # export V4 gallery
 ```
 
-## Benchmark and robustness
+## V5: MegaDescriptor + invariance training (40 individuals)
 
 ```bash
-python common/benchmark.py    # compare V1 to V4 on all datasets
-python common/stress_test.py  # robustness under blur, low-res, JPEG compression, etc.
+# Uses data/crops/known (zoo) + data/crops/bos (rescue center) + data/crops/wild
+python v5_megadesc_arcface_invariance/01_train.py            # train with invariance + curriculum (GPU, several hours)
+python v5_megadesc_arcface_invariance/01_train.py --dry-run  # quick check
+python v5_megadesc_arcface_invariance/02_export_tflite.py    # export backbone to TFLite (WSL)
 ```
 
-## Migrating existing data
-
+## V6: production model, 15 zoo individuals (deployed)
 
 ```bash
+# Crop the 5 new zoo individuals and score their quality
+python v6_megadesc_arcface_15ind/01_extract_crops.py
+python v6_megadesc_arcface_15ind/01b_brighten.py             # brighten dark crops (CLAHE)
+python common/review_crops.py                                # review / correct boxes
+python v6_megadesc_arcface_15ind/01c_review_quality.py       # keep only good-quality crops
+python v6_megadesc_arcface_15ind/02_train.py                 # train the production model (GPU, several hours)
+python v6_megadesc_arcface_15ind/03_tune_threshold.py        # calibrate the acceptance threshold
+python v6_megadesc_arcface_15ind/04_test_open_set.py         # test rejection of unknown animals
+python v6_megadesc_arcface_15ind/05_export_tflite.py         # export to .tflite for the app (WSL)
+```
+
+> **To update the deployed app** (add animals or retrain) without reading the research
+> scripts, follow the plain-language guide in **`maintenance/`**. It wraps the same steps
+> for a non-specialist.
 
 ## Adapting to another species
 
 1. Edit `config.yaml`: change `species` and `project_name`
 2. Put the photos in `data/photos/<IndividualName>/`
 3. Photograph each individual (>50 photos per individual recommended)
-4. Follow the V3 or V4 pipeline. MegaDescriptor-T works well on new species with limited data
+4. Follow the V3 to V6 pipeline. MegaDescriptor-T works well on new species with limited data
 5. The YOLO detection model is trained per species (V1 step)

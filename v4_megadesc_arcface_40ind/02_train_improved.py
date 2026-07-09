@@ -20,7 +20,7 @@
 #   Close terminal anytime. Relaunch -> continues from last epoch.
 #
 # RUN:
-#   conda activate wildlife-id
+#   conda activate orangs
 #   python v4_megadesc_arcface_40ind/02_train_improved.py
 
 import sys

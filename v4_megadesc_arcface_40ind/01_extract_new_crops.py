@@ -7,7 +7,7 @@
 # Saves all bounding boxes to crops.json
 #
 # RUN:
-#   conda activate wildlife-id
+#   conda activate orangs
 #   python v4_megadesc_arcface_40ind/01_extract_new_crops.py
 
 import sys

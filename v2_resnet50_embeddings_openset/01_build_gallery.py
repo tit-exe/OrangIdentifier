@@ -75,7 +75,7 @@ OUTPUTS
 
 REQUIREMENTS
 ------------
-  conda activate wildlife-id
+  conda activate orangs
   pip install scikit-learn matplotlib seaborn umap-learn  (if not already)
 """
 
@@ -655,7 +655,7 @@ ax.set_title("t-SNE of ResNet50 Embedding Space — Orang-outan Face Recognition
 ax.set_xlabel("t-SNE dimension 1", fontsize=11)
 ax.set_ylabel("t-SNE dimension 2", fontsize=11)
 ax.text(0.02, 0.02,
-        f"n={len(tsne_indices)} crops  |  ★ = individual prototype",
+        f"n={len(tsne_indices)} crops  |  * = individual prototype",
         transform=ax.transAxes, fontsize=9, color="gray")
 plt.tight_layout()
 plt.savefig(OUTPUT_RESULTS / "01_tsne_embedding_space.png", dpi=150, bbox_inches="tight")

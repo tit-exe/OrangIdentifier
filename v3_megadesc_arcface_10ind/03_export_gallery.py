@@ -7,7 +7,7 @@
 # Goal: measure if the current model correctly rejects them as "unknown".
 #
 # RUN:
-#   conda activate wildlife-id
+#   conda activate orangs
 #   python v3_megadesc_arcface_10ind/05_export_gallery.py
 
 import sys

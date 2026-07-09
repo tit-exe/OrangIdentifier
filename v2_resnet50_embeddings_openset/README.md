@@ -2,27 +2,27 @@
 
 ## Architecture
 - **Detection**: YOLO v2 medium (unchanged from V1)
-- **Backbone**: ResNet50 from V1 WITHOUT the fc head
+- **Backbone**: ResNet50 from V1 without the fc head
 - **Embedding**: 2048-dim vectors, L2-normalized
 - **Gallery**: per-individual averaged prototypes
 - **Threshold**: calibrated by leave-one-individual-out (max F1)
 
-## Results
+## Results (fair cross-version benchmark)
 | Metric | Value |
 |--------|-------|
-| Zoo accuracy (nearest prototype) | ~98% |
-| ROC AUC | 0.9821 |
-| Separability | 1.7203 |
+| Clean identification (10 zoo) | 96.5% |
+| Separability gap | 0.23 |
+| Open-set rejection (ROC AUC) | 0.83 |
 | Calibrated threshold | 0.4885 |
-| BOS rejection | 27.5% ⚠️ |
 
 ## Innovation
-First open-set system: can say "unknown".
-Adding an individual = computing its prototype (10 min, zero retraining).
+First open-set system: it can answer "unknown".
+Adding an individual means computing its prototype (a few minutes, zero retraining).
 
 ## Limitation
-Insufficient robustness to BOS unknowns: only 27.5%.
-→ Solved in V3 with ArcFace and wild crops.
+Weak open-set rejection compared with the later ArcFace models: the ResNet50 features
+were not optimised for embeddings. Solved in V3 with Sub-center ArcFace and wild
+background crops.
 
 ## Models
 Download with `python models/download_models.py --version v2`

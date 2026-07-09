@@ -27,9 +27,6 @@ except ImportError:
 # ==============================================================================
 # MODEL CATALOGUE
 # ==============================================================================
-# TODO: replace "titouane-iphc" with your HuggingFace username
-# after uploading the models to https://huggingface.co
-
 REPO_ID = "tit0000/OrangIdentifier"
 
 MODELS = {
@@ -69,6 +66,24 @@ MODELS = {
         "desc":    "MegaDescriptor+ArcFace V4 — 40 individuals, acc=99%",
         "size_mb": 105,
     },
+    "v5": {
+        "file":    "megadesc_T_arcface_v5_invariance_acc99.pt",
+        "dest":    "models/megadesc_T_arcface_v5_invariance_acc99.pt",
+        "desc":    "MegaDescriptor+ArcFace V5 — invariance + curriculum, 40 individuals",
+        "size_mb": 105,
+    },
+    "v6": {
+        "file":    "megadesc_T_arcface_v6_15ind_acc98.pt",
+        "dest":    "models/megadesc_T_arcface_v6_15ind_acc98.pt",
+        "desc":    "MegaDescriptor+ArcFace V6 — production, 15 zoo individuals, acc=98.4%",
+        "size_mb": 105,
+    },
+    "v6_tflite": {
+        "file":    "megadesc_v6_backbone.tflite",
+        "dest":    "models/megadesc_v6_backbone.tflite",
+        "desc":    "V6 backbone exported to TFLite (for the Android app)",
+        "size_mb": 112,
+    },
 }
 
 VERSION_MAP = {
@@ -76,6 +91,8 @@ VERSION_MAP = {
     "v2": ["yolo_v2", "resnet50_backbone"],
     "v3": ["yolo_v2", "v3"],
     "v4": ["yolo_v2", "v4"],
+    "v5": ["yolo_v2", "v5"],
+    "v6": ["yolo_v2", "v6", "v6_tflite"],
     "all": list(MODELS.keys()),
 }
 

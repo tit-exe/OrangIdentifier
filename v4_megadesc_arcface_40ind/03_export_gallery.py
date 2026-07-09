@@ -3,7 +3,7 @@
 # Run this BEFORE reorganize_final.py --run
 #
 # RUN:
-#   conda activate wildlife-id
+#   conda activate orangs
 #   python v4_megadesc_arcface_40ind/03_export_gallery.py
 
 import sys

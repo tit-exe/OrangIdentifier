@@ -1,7 +1,10 @@
 # common/
 
+Shared utilities used by every version of the pipeline.
+
 ## review_crops.py
-Replaces all the old reviewers (3b_reviser_faces.py, V2_4_review_crops.py, etc.)
+
+Unified crop reviewer (replaces all the old per-version reviewers).
 
 ```bash
 python common/review_crops.py <crops_folder>
@@ -16,14 +19,8 @@ python common/review_crops.py <crops_folder> --json boxes.json
 - `A` / `←` : previous
 - Handles on the bounding box to resize
 
-## benchmark.py
+## config_loader.py
 
-```bash
-python common/benchmark.py --models-dir models/
-```
-
-## download_models.py
-
-```bash
-python models/download_models.py --version all
-```
+Single source of truth for all paths and settings. Every script imports from here
+instead of hardcoding paths. Edit `config.yaml` (at the repository root) to adapt the
+pipeline to a new machine or a new species.

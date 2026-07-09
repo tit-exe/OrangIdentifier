@@ -20,7 +20,7 @@ but does NOT embed the names in the .pt file itself. The Android app needs
 labels.txt to map index 0 → "Auti", index 1 → "Jula", etc.
 The order is determined by Python's sorted() on the dataset folder names.
 
-REQUIREMENTS (install in your conda env 'wildlife-id')
+REQUIREMENTS (install in your conda env 'orangs')
 ---------------------------------------------------
   pip install onnx onnx-tf tensorflow onnxruntime ai-edge-torch
 

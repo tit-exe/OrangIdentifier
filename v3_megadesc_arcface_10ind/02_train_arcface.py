@@ -66,7 +66,7 @@ RTX 3050 (4GB VRAM):
 
 RUN
 ---
-  conda activate wildlife-id
+  conda activate orangs
   python v3_megadesc_arcface_10ind/04_train_arcface.py
 """
 

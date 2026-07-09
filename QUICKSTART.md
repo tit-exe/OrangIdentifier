@@ -1,5 +1,10 @@
 # QUICKSTART
 
+> **Just want to update the app** (add animals or retrain the deployed V6 model)?
+> Do not use this guide. Open **`maintenance/`** instead: it is a plain-language,
+> step-by-step guide written for a non-specialist. This QUICKSTART is for training
+> a model from scratch on your own photographs.
+
 ---
 
 ## Before you start (one-time setup)
@@ -156,7 +161,7 @@ python v4_megadesc_arcface_40ind/03_export_gallery.py   # if you trained V4
 
 The gallery JSON is saved to `output/`. Load it into the Android app or any inference app.
 
-> **Android app** → [tit0000/OrangIdentifier-Android](https://github.com/tit0000/OrangIdentifier-Android) *(separate repository, coming soon)*
+> **Android app** → [tit-exe/OrangIdentifier-Android](https://github.com/tit-exe/OrangIdentifier-Android) *(separate repository, coming soon)*
 
 ---
 
@@ -194,8 +199,7 @@ After training, check how well the model handles unknown individuals and degrade
 
 ```
 python v3_megadesc_arcface_10ind/04_test_open_set.py    # rejection rate on unseen individuals
-python common/stress_test.py                             # robustness under blur, low-res, JPEG compression, etc.
-python common/benchmark.py                               # compare all versions side by side
+python v6_megadesc_arcface_15ind/04_test_open_set.py    # same test for the production model
 ```
 
 ---

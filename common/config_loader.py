@@ -94,7 +94,9 @@ OUTPUT_DIR: Path = REPO_ROOT / _cfg.get("output_dir", "output")
 
 # Crops — 224x224 face crops extracted by YOLO
 CROPS_DIR: Path       = REPO_ROOT / "data/crops"
-CROPS_KNOWN_DIR: Path = CROPS_DIR / "known"   # labeled individuals (zoo, BOS, field)
+CROPS_KNOWN_DIR: Path = CROPS_DIR / "known"   # the 10 zoo individuals (V1 to V6)
+CROPS_BOS_DIR: Path   = CROPS_DIR / "bos"     # the 30 rescue-center individuals (V5)
+CROPS_NEW_DIR: Path   = CROPS_DIR / "new"     # the 5 new zoo individuals (V6)
 CROPS_WILD_DIR: Path  = CROPS_DIR / "wild"    # unlabeled wild crops (background class)
 
 # Unified JSON tracking all crops from all pipeline versions
@@ -115,6 +117,9 @@ RESNET_PT: Path   = MODELS_DIR / "resnet50_classifier_10classes_acc96.pt"
 BACKBONE_PT: Path = MODELS_DIR / "resnet50_backbone_2048dim.pt"
 V3_PT: Path       = MODELS_DIR / "megadesc_T_arcface_final_epoch21_acc99.pt"
 V4_PT: Path       = MODELS_DIR / "megadesc_T_arcface_v4_40individuals_acc99.pt"
+V5_PT: Path       = MODELS_DIR / "megadesc_T_arcface_v5_invariance_acc99.pt"
+V6_PT: Path       = MODELS_DIR / "megadesc_T_arcface_v6_15ind_acc98.pt"
+V6_TFLITE: Path   = MODELS_DIR / "megadesc_v6_backbone.tflite"
 
 # ---------------------------------------------------------------------------
 # YOLO parameters
@@ -139,6 +144,20 @@ DEVICE: str           = _cfg.get("device", "auto")
 # Open-set gallery
 # ---------------------------------------------------------------------------
 UNKNOWN_THRESHOLD: float = float(_cfg.get("unknown_threshold", 0.22))
+
+# Late-version (V5/V6) parameters
+ARC_MARGIN_LATE: float      = float(_cfg.get("arc_margin_late", 0.35))
+K_ZOO: int                  = int(_cfg.get("k_zoo", 2))
+K_BOS: int                  = int(_cfg.get("k_bos", 1))
+K_WILD: int                 = int(_cfg.get("k_wild", 5))
+EXEMPLARS_PER_INDIVIDUAL: int = int(_cfg.get("exemplars_per_individual", 25))
+UNKNOWN_THRESHOLD_V6: float = float(_cfg.get("unknown_threshold_v6", 0.5371))
+
+# Individual groups (names per set), used by V5/V6 to split zoo / BOS / new.
+GROUPS: dict = _cfg.get("groups", {})
+ZOO_INDIVIDUALS: list = GROUPS.get("zoo", [])
+BOS_INDIVIDUALS: list = GROUPS.get("bos", [])
+NEW_INDIVIDUALS: list = GROUPS.get("new", [])
 
 # ---------------------------------------------------------------------------
 # Helpers
@@ -182,18 +201,11 @@ def to_relative(p: str | Path, base: Path = REPO_ROOT) -> str:
 if __name__ == "__main__":
     print(f"REPO_ROOT        : {REPO_ROOT}")
     print(f"PHOTOS_DIR       : {PHOTOS_DIR}")
-    print(f"WILD_IMAGES_DIR  : {WILD_IMAGES_DIR}")
     print(f"CROPS_KNOWN_DIR  : {CROPS_KNOWN_DIR}")
+    print(f"CROPS_BOS_DIR    : {CROPS_BOS_DIR}")
+    print(f"CROPS_NEW_DIR    : {CROPS_NEW_DIR}")
     print(f"CROPS_WILD_DIR   : {CROPS_WILD_DIR}")
-    print(f"CROPS_JSON       : {CROPS_JSON}")
     print(f"MODELS_DIR       : {MODELS_DIR}")
-    print(f"HF_CACHE         : {HF_CACHE}")
-    print(f"TORCH_CACHE      : {TORCH_CACHE}")
     print(f"SPECIES          : {SPECIES}")
-    print(f"PROJECT_NAME     : {PROJECT_NAME}")
-    print()
-    print("apply_cache_env() preview:")
-    print(f"  HF_HOME        -> {HF_CACHE}")
-    print(f"  TORCH_HOME     -> {TORCH_CACHE}")
-    print()
+    print(f"groups (zoo/bos/new): {len(ZOO_INDIVIDUALS)}/{len(BOS_INDIVIDUALS)}/{len(NEW_INDIVIDUALS)}")
     print("config_loader OK")

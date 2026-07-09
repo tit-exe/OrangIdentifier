@@ -13,8 +13,8 @@ Note: this is NOT a pip setup.py. It only checks the environment.
   2. Open "Anaconda Prompt" (NOT regular cmd/PowerShell)
   3. Create the environment:
 
-       conda create -n wildlife-id python=3.10 -y
-       conda activate wildlife-id
+       conda create -n orangs python=3.10 -y
+       conda activate orangs
 
   4. Install PyTorch WITH CUDA (must come first — PyPI has CPU-only builds):
 
@@ -28,7 +28,7 @@ Note: this is NOT a pip setup.py. It only checks the environment.
 
        python check_env.py
 
-  NOTE: Always run with "conda activate wildlife-id" first.
+  NOTE: Always run with "conda activate orangs" first.
   NOTE: Do NOT use "pip install -r requirements.txt" directly — the torch+CUDA
         package needs the special --index-url above; plain pip installs CPU-only.
 """
@@ -112,7 +112,7 @@ def main():
                 print("  [!!] Training will run on CPU — 50-100x slower than GPU.")
                 print("  [!!]")
                 print("  [!!] Fix: reinstall PyTorch with CUDA in Anaconda Prompt:")
-                print("  [!!]   conda activate wildlife-id")
+                print("  [!!]   conda activate orangs")
                 print("  [!!]   pip uninstall torch torchvision -y")
                 print("  [!!]   pip install torch==2.4.1+cu124 torchvision==0.19.1+cu124 \\")
                 print("  [!!]          --index-url https://download.pytorch.org/whl/cu124")
@@ -200,8 +200,8 @@ def main():
         print()
         print("  === SETUP REMINDER (Anaconda Prompt) ===")
         print()
-        print("  conda create -n wildlife-id python=3.10 -y")
-        print("  conda activate wildlife-id")
+        print("  conda create -n orangs python=3.10 -y")
+        print("  conda activate orangs")
         print()
         print("  # PyTorch + CUDA (must use special index — PyPI has CPU-only builds)")
         print("  pip install torch==2.4.1+cu124 torchvision==0.19.1+cu124 \\")

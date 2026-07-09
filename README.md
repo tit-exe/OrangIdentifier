@@ -1,25 +1,25 @@
 # OrangIdentifier
 
-**Individual facial recognition for Bornean orangutans.** End-to-end pipeline from raw photographs to an identity gallery.
+**Individual facial recognition for Bornean orangutans.** End-to-end pipeline from raw photographs to an identity gallery, deployed offline in an Android app.
 
 ---
 
 ## Overview
 
-This pipeline trains a face detector and an individual identification model from a collection of labeled photographs, then exports the result as a lightweight **gallery JSON** (one averaged embedding vector per individual).
+This pipeline trains a face detector and an individual identification model from a collection of labeled photographs, then exports the result as a lightweight **gallery JSON** (one embedding vector per individual).
 
-The gallery can be loaded into any app (Android, desktop, embedded). Adding a new individual requires 10–20 photos, takes under a minute, and requires no retraining.
+The gallery can be loaded into any app (Android, desktop, embedded). Adding a new individual requires 10 to 20 photos, takes under a minute, and requires no retraining.
 
-> **Android app** → separate repository: https://github.com/tit-exe/OrangIdentifier_AndroidApp
+> **Android app** is in a separate repository: https://github.com/tit-exe/OrangIdentifier_AndroidApp
 
 ---
 
 ## Demo
 
-![OrangIdentifier demo — real-time individual identification](assets/demo.gif)
+![OrangIdentifier demo, real-time individual identification](assets/demo.gif)
 
-> V1 pipeline · YOLO face detection + ResNet50 identification · running offline on laptop.  
-> Processing a 1 min 30 sec field video takes approximately 2 minutes on an RTX 3050 (YOLO detection + embedding extraction + identity matching).
+> V1 pipeline, YOLO face detection plus ResNet50 identification, running offline on a laptop.
+> Processing a 1 min 30 sec field video takes about 2 minutes on an RTX 3050 (detection, embedding extraction and identity matching).
 
 ---
 
@@ -31,8 +31,8 @@ flowchart LR
     B --> C[224x224 crop]
     C --> D[MegaDescriptor-T-224\nSwin Transformer\n768-dim embedding]
     D --> E{Cosine similarity\nvs gallery}
-    E -->|sim >= 0.22| F[Known individual\nwith confidence score]
-    E -->|sim < 0.22| G[Unknown individual]
+    E -->|sim >= threshold| F[Known individual\nwith confidence score]
+    E -->|sim < threshold| G[Unknown individual]
 
     style A fill:#1e1e2e,stroke:#585b70,color:#cdd6f4
     style B fill:#1e1e2e,stroke:#585b70,color:#cdd6f4
@@ -45,7 +45,7 @@ flowchart LR
 
 ---
 
-## Four versions
+## Six versions
 
 ```mermaid
 timeline
@@ -56,53 +56,72 @@ timeline
     V2 : YOLO medium detection
        : ResNet50 backbone embeddings
        : Open-set with calibrated threshold
-    V3 : YOLO medium (unchanged)
-       : MegaDescriptor-T-224 + Sub-center ArcFace
+    V3 : MegaDescriptor-T-224 + Sub-center ArcFace
        : Wild internet crops as background class
+       : Reference embedding model
     V4 : Same architecture as V3
-       : 40 supervised individuals
-       : Improved augmentations for blur and low-resolution
+       : 40 supervised individuals (10 zoo + 30 rescue-center)
+       : Stronger blur and low-resolution augmentation
+    V5 : Invariance training + degradation curriculum
+       : Robust to blur and low resolution
+       : Exemplar gallery, turning point
+    V6 : Production model, zoo only, 15 individuals
+       : Crop quality pipeline, deployed in the app
 ```
 
-| | V1 | V2 | V3 | **V4** |
-|---|---|---|---|---|
-| Backbone | ResNet50 | ResNet50 | MegaDescriptor-T | **MegaDescriptor-T** |
-| Loss | Cross-entropy | — (reuse V1) | Sub-center ArcFace | **Sub-center ArcFace** |
-| Supervised individuals | 10 | 10 | 10 | **40** |
-| Closed-set accuracy | 96.3% | ~98% | 99.2% | **99.2%** |
-| Unknown rejection (1,622 unseen crops) | none | 27.5% | 97.5% | **97.5%** |
-| Wild internet rejection | none | 48.5% | 93.2% | **93.0%** |
-| Separability gap | — | 0.294 | 0.883 | **0.885** |
-| Inference time (RTX 3050) | 12 ms | 11 ms | 17 ms | **20 ms** |
+The six versions were compared with a single fair evaluation: the same session-level train/test split, galleries rebuilt identically, and each version scored for open-set rejection only on identities it never saw during training. Two complementary views are reported.
 
-![Overview](assets/overview.png)
+**Axis 1, controlled comparison** (the 10 zoo individuals common to every version, so only the backbone changes):
+
+| | V1 | V2 | V3 | V4 | V5 | **V6** |
+|---|---|---|---|---|---|---|
+| Backbone | ResNet50 | ResNet50 | MegaDescriptor-T | MegaDescriptor-T | MegaDescriptor-T | **MegaDescriptor-T** |
+| Loss | Cross-entropy | reuse V1 | Sub-center ArcFace | Sub-center ArcFace | ArcFace + invariance | **ArcFace + invariance** |
+| Supervised individuals | 10 | 10 | 10 | 40 | 40 | **15** |
+| Clean identification (10 zoo) | 96.5% | 96.5% | 99.2% | 99.2% | 99.7% | **99.2%** |
+| Separability gap | 0.23 | 0.23 | 0.85 | 0.86 | 0.91 | **0.88** |
+| Unknown rejection (ROC AUC) | 0.83 | 0.83 | 0.998 | 0.99 | 0.99 | **0.999** |
+| Identification under moderate blur | 77% | 77% | 11% | 11% | 95% | **93%** |
+| Role | first system | open-set | reference model | 40 individuals | invariance turning point | **production (deployed)** |
+
+> **Reading the rejection column.** A version can only be tested for "rejection" on individuals it never learned. V1, V2, V3 and V6 are scored against the rescue-center (BOS) animals they never saw. V4 and V5 were trained on the BOS animals, so they are instead scored against the 5 new zoo individuals they never saw. Every number therefore uses a legitimate, never-trained unknown set. Clean identification on good zoo crops saturates from V3 onward, so it is not where the versions differ. The real separation appears under degradation (see below).
+
+![Summary of all metrics](assets/summary_table.png)
 
 ---
 
 ## Results
 
-### Robustness under degraded conditions
+### Identification under degraded conditions
 
-Field photos are rarely ideal. Each model was evaluated across 8 degradation types at 5 severity levels to simulate real patrol conditions: motion blur, low resolution, JPEG compression, exposure, rotation, occlusion, and combinations.
+Field photos are rarely ideal. Each version was re-tested on the same crops after blur, low resolution, JPEG compression and low light at increasing severity, to simulate real patrol conditions. This is the metric that actually separates the versions.
 
-![Stress test](assets/stress_test.png)
+![Top-1 identification accuracy under degradation](assets/robustness_identification.png)
 
-**Accuracy (%) by degradation type and severity**
+V3 and V4 collapse to chance level (around 11%, for a 10-way problem) as soon as blur becomes moderate. V5 introduced an invariance loss and a degradation curriculum, and holds above 90%. V6 keeps that robustness for the deployed zoo model. This is why V5, not V4, is the real robustness turning point.
 
-![Stress heatmap](assets/stress_heatmap.png)
+### Separability and rejection
 
-V4 improves robustness on the two critical failure modes identified in V3:
+![Separability across versions](assets/separability.png)
 
-| Degradation | Severity | V3 | V4 | Gain |
-|---|---|---|---|---|
-| Low resolution | Moderate | 64.2% | 73.3% | +9.1% |
-| Combined (blur + JPEG + resize) | Light | 65.8% | 80.0% | +14.2% |
+The move from ResNet50 to MegaDescriptor-T with Sub-center ArcFace is the largest single jump: the separability gap between an individual and its nearest competitor rises from about 0.23 to about 0.85 or more. Rejection of never-seen individuals follows the same pattern.
 
-![V3 vs V4](assets/v3_vs_v4.png)
+![Open-set rejection ROC and AUC](assets/rejection.png)
 
-### Global performance radar
+### Why V6 and not V5
 
-![Radar](assets/radar.png)
+On the shared 10 zoo individuals, V5 and V6 look equivalent. The difference appears when each model is evaluated on its own full task (Axis 2, descriptive, so the numbers are not directly comparable because the number of individuals differs).
+
+| Version | Individuals it must recognise | Native accuracy (micro / macro) | BOS separability gap |
+|---|---|---|---|
+| V3 | 10 zoo | 99.2% / 99.2% | not applicable |
+| V4 | 40 (10 zoo + 30 BOS) | 73.7% / 55.6% | -0.01 |
+| V5 | 40 (10 zoo + 30 BOS) | 87.5% / 79.5% | +0.06 |
+| **V6** | 15 (10 zoo + 5 new) | **97.9% / 98.2%** | not applicable |
+
+The rescue-center animals are almost inseparable: V4 cannot tell them apart at all (a negative gap means a crop is as close to a wrong individual as to itself), and even V5, with a dedicated spreading loss, only reaches a weak +0.06. Averaged per individual, V5 identifies fewer than 80% of its 40 individuals. V6 dropped the BOS animals entirely and focused on the 15 zoo individuals of the actual deployment target, where it reaches 98%. That is the reason V6 is the production model.
+
+![V5 versus V6, per-group separability and accuracy](assets/v5_vs_v6_decision.png)
 
 ---
 
@@ -110,8 +129,8 @@ V4 improves robustness on the two critical failure modes identified in V3:
 
 | Source | Individuals | Crops | Role |
 |--------|-------------|-------|------|
-| Captive collection | 10 | 2,127 | Training (known) |
-| Field rescue center | 30 | 1,622 | Open-set test only (never seen during training) |
+| Captive collection (zoo) | 15 | 2,127 + 865 | Training (known individuals) |
+| Field rescue center (BOS) | 30 | 1,622 | Supervised in V4/V5, unknown test set for V3/V6 |
 | Internet (iNaturalist, GBIF, web) | unlabeled | 5,429 | Background class during training |
 
 Images are not included in this repository.
@@ -128,12 +147,15 @@ python models/download_models.py --version all
 
 | File | Used in | Size | Description |
 |------|---------|------|-------------|
-| `yolo_v1_nano_mAP92.pt` | V1 | 6 MB | YOLO nano — mAP@50 = 91.98% |
-| `yolo_v2_medium_mAP99.pt` | V1 → V4 | 85 MB | YOLO medium — mAP@50 = 99.39% |
+| `yolo_v1_nano_mAP92.pt` | V1 | 6 MB | YOLO nano, mAP@50 = 91.98% |
+| `yolo_v2_medium_mAP99.pt` | V1 to V6 | 85 MB | YOLO medium, mAP@50 = 99.39% |
 | `resnet50_classifier_10classes_acc96.pt` | V1 | 90 MB | Closed-set classifier |
 | `resnet50_backbone_2048dim.pt` | V2 | 90 MB | Embedding backbone, 2048-dim |
 | `megadesc_T_arcface_final_epoch21_acc99.pt` | V3 | 105 MB | ArcFace, 10 individuals |
-| `megadesc_T_arcface_v4_40individuals_acc99.pt` | **V4** | 105 MB | ArcFace, 40 individuals |
+| `megadesc_T_arcface_v4_40individuals_acc99.pt` | V4 | 105 MB | ArcFace, 40 individuals |
+| `megadesc_T_arcface_v5_invariance_acc99.pt` | V5 | 105 MB | ArcFace + invariance, 40 individuals |
+| `megadesc_T_arcface_v6_15ind_acc98.pt` | **V6** | 105 MB | Production, 15 zoo individuals |
+| `megadesc_v6_backbone.tflite` | V6 (app) | 112 MB | V6 backbone for the Android app |
 
 Hosted at [HuggingFace: tit0000/OrangIdentifier](https://huggingface.co/tit0000/OrangIdentifier)
 
@@ -142,10 +164,10 @@ Hosted at [HuggingFace: tit0000/OrangIdentifier](https://huggingface.co/tit0000/
 ## Installation
 
 ```bash
-conda create -n wildlife-id python=3.10
-conda activate wildlife-id
+conda create -n orangs python=3.10
+conda activate orangs
 
-# PyTorch with CUDA (note: plain pip installs a CPU-only build)
+# PyTorch with CUDA (plain pip installs a CPU-only build)
 pip install torch==2.4.1+cu124 torchvision==0.19.1+cu124 \
     --index-url https://download.pytorch.org/whl/cu124
 
@@ -159,7 +181,7 @@ python check_env.py
 python models/download_models.py
 ```
 
-Tested on Windows 11 · Python 3.10 · PyTorch 2.4.1+cu124 · RTX 3050 4 GB.
+Tested on Windows 11, Python 3.10, PyTorch 2.4.1+cu124, RTX 3050 4 GB.
 
 ---
 
@@ -174,15 +196,14 @@ python v1_yolo_nano_resnet50/04_extract_crops.py
 # 2. Manual crop review (drag and drop)
 python common/review_crops.py
 
-# 3. Train V4 (recommended)
-python v4_megadesc_arcface_40ind/02_train_improved.py
+# 3. Train the production model (V6, zoo only)
+python v6_megadesc_arcface_15ind/02_train.py
 
-# 4. Export gallery JSON
-python v4_megadesc_arcface_40ind/03_export_gallery.py
-# → output/gallery.json  (load this into the Android app or any inference app)
+# 4. Export the backbone to TFLite for the app (needs WSL, see maintenance/)
+python v6_megadesc_arcface_15ind/05_export_tflite.py
 
-# 5. Benchmark all versions
-python common/benchmark.py
+# To simply UPDATE the deployed app (add animals or retrain), follow maintenance/
+# It is a plain-language, step-by-step guide written for a non-specialist.
 ```
 
 ---
@@ -194,16 +215,18 @@ OrangIdentifier/
 ├── v1_yolo_nano_resnet50/           YOLO detection + ResNet50 closed-set classifier
 ├── v2_resnet50_embeddings_openset/  ResNet50 backbone + cosine similarity gallery
 ├── v3_megadesc_arcface_10ind/       MegaDescriptor-T + Sub-center ArcFace, 10 individuals
-├── v4_megadesc_arcface_40ind/       MegaDescriptor-T + ArcFace improved, 40 individuals
+├── v4_megadesc_arcface_40ind/       MegaDescriptor-T + ArcFace, 40 individuals
+├── v5_megadesc_arcface_invariance/  MegaDescriptor-T + invariance training, 40 individuals
+├── v6_megadesc_arcface_15ind/       Production model, 15 zoo individuals (deployed)
+├── maintenance/                     Plain-language guide to update the deployed app
 ├── common/
 │   ├── review_crops.py              Unified crop reviewer (replaces all legacy versions)
-│   ├── benchmark.py                 V1–V4 comparative benchmark
-│   └── stress_test.py               Robustness evaluation under degraded conditions
+│   └── config_loader.py             Single source of truth for paths and settings
 ├── models/
 │   ├── download_models.py           Download pretrained weights from HuggingFace
 │   └── README.md                    Model catalogue and direct links
 ├── docs/
-│   └── figures/                     Full benchmark figures (10 graphs)
+│   └── figures/                     Cross-version evaluation figures
 ├── config.yaml                      Single configuration file to adapt for a new species
 ├── check_env.py                     Environment check and setup instructions
 ├── PIPELINE.md                      Step-by-step usage guide
@@ -217,11 +240,11 @@ OrangIdentifier/
 
 The pipeline is designed to be reusable. To apply it to gorillas, chimpanzees, or any other species:
 
-1. Edit `config.yaml`: set `species`, `project_name`, and data paths
+1. Edit `config.yaml`: set `species`, `project_name` and data paths
 2. Collect labeled photos, one subfolder per individual in `data/photos/`
 3. Annotate faces using `tools/annotate_keyboard.py`
 4. Retrain YOLO on the new annotations
-5. Follow the V3 or V4 pipeline
+5. Follow the V3 to V6 pipeline
 
 MegaDescriptor-T is pretrained on animal re-identification across dozens of species and generalizes well to new contexts with limited data.
 
@@ -229,9 +252,9 @@ MegaDescriptor-T is pretrained on animal re-identification across dozens of spec
 
 ## Note on this repository
 
-The code here is a cleaned-up version of what was actually used during development. The original work involved a lot of trial and error, many different scripts, and messy iterations. This repo is a reorganised version of that.
+The code here is a cleaned-up version of what was actually used during development. The original work involved a lot of trial and error, many different scripts and messy iterations. This repository is a reorganised version of that.
 
-Everything should work as documented, but if something breaks, feel free to open an issue or contact me directly. You can also drop the relevant files into an AI like [Claude](https://claude.ai), it reads the whole codebase and can usually figure out what went wrong.
+Everything should work as documented, but if something breaks, feel free to open an issue or contact me directly. You can also drop the relevant files into an AI assistant such as [Claude](https://claude.ai): it reads the whole codebase and can usually figure out what went wrong.
 
 ---
 
