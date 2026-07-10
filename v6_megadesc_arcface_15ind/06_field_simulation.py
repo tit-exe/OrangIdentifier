@@ -79,7 +79,7 @@ TEST_MIN  = 5           # minimum crops test
 TRAIN_MIN = 3           # minimum crops train pool
 MIN_CROPS = 12          # individuals with fewer are skipped
 
-N_VALUES  = [1, 2, 3, 4, 5, 7, 10, 15, 20, 25]   # includes 25 (requested by Cedric)
+N_VALUES  = [1, 2, 3, 4, 5, 7, 10, 15, 20, 25]   # includes 25 (requested by the supervisor)
 K_MC      = 50          # Monte Carlo repetitions (50 = good balance speed/variance)
 N_WILD    = 200         # max wild crops for FP analysis
 IMG_SIZE  = 224
@@ -375,7 +375,7 @@ def fig_main(all_results, n_values, out_path):
     - Faded lines per individual (shows honest spread).
     - Bold mean line + ±1 std band.
     - Key numbers annotated on the mean curve.
-    This is the graph to send to Cedric / Indonesian colleagues.
+    This is the graph to share with the field partners and Indonesian colleagues.
     """
     names   = sorted(all_results.keys())
     n_ind   = len(names)
@@ -506,7 +506,7 @@ def fig_per_individual(all_results, n_values, out_path):
 
 def fig_table(all_results, n_values, out_path):
     """
-    Summary table exactly matching Cedric's requested format:
+    Summary table exactly matching the requested format:
       Rows = N photos (1, 5, 10, 15, 20, 25)
       Cols = individual names + MEAN column
       Values = recognition rate %
