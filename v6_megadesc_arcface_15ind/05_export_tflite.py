@@ -1,8 +1,8 @@
 """
 V6_6_export_tflite.py — OrangIdentifier V6
 ============================================
-Exporte le backbone V6 en TFLite (float32) et déploie dans les assets Android.
-Ce script tourne sous WSL2/Linux — litert_torch n'existe qu'en Linux.
+Export the V6 backbone to TFLite (float32) and deploy it into the Android assets.
+This script runs under WSL2/Linux, since litert_torch only exists on Linux.
 
 RUN (depuis PowerShell) :
   wsl -d Ubuntu -- bash -c "/root/miniconda3/bin/conda run -n orangs_export --no-capture-output python <repo>/v6_megadesc_arcface_15ind/05_export_tflite.py"
@@ -11,7 +11,7 @@ Fichiers produits :
   output/v6/models/v6_backbone.tflite
   .../assets/megadesc_v6_backbone.tflite          ← remplace V3
   .../assets/gallery.json                        ← remplace V3
-  .../assets/yolo_v2_detector.tflite             ← inchangé
+  .../assets/yolo_v2_detector.tflite             <- unchanged
 """
 
 import sys, shutil, json
@@ -58,13 +58,13 @@ for p, label in [(BACKBONE_PT, "v6_backbone_only.pt"),
                  (ANDROID_ASSETS, "android assets dir")]:
     if p.exists():
         sz = p.stat().st_size if p.is_file() else 0
-        log(f"  ✓  {label:<35} {sz/1e6:6.1f} MB" if sz else f"  ✓  {label}/")
+        log(f"  OK  {label:<35} {sz/1e6:6.1f} MB" if sz else f"  OK  {label}/")
     else:
-        log(f"  ✗  NOT FOUND: {p}", "ERR")
+        log(f"  X  NOT FOUND: {p}", "ERR")
         errors.append(str(p))
 
 if ANDROID_YOLO.exists():
-    log(f"  ✓  yolo_v2_detector.tflite   (will NOT be touched)")
+    log(f"  OK  yolo_v2_detector.tflite   (will NOT be touched)")
 else:
     log(f"  !  yolo_v2_detector.tflite not found in assets", "WARN")
 
@@ -179,7 +179,7 @@ with open(TFLITE_OUT, "rb") as f:
     f.seek(4)
     magic = f.read(4)
 if magic == b"TFL3":
-    log("  Magic : TFL3 ✓  (valid TFLite FlatBuffer)")
+    log("  Magic : TFL3 OK  (valid TFLite FlatBuffer)")
 else:
     log(f"  Magic : {magic!r}  ← unexpected, file may be corrupt", "WARN")
 
@@ -220,7 +220,7 @@ if unexpected_files:
     log(f"  !  Unexpected files in assets: {unexpected_files}", "WARN")
     log("     Delete them manually to keep assets clean.", "WARN")
 else:
-    log("  Assets folder clean — no unexpected files ✓")
+    log("  Assets folder clean — no unexpected files OK")
 
 log()
 log("  After:")
@@ -298,8 +298,8 @@ log(f"""
   Gallery : {ANDROID_GAL.name}  ({new_gal/1e6:.1f} MB)
   Deployed: {ANDROID_ASSETS}
 
-  YOLO detector : unchanged ✓
-  Artefacts     : {"none ✓" if not unexpected_files else str(unexpected_files)}
+  YOLO detector : unchanged OK
+  Artefacts     : {"none OK" if not unexpected_files else str(unexpected_files)}
 
   NEXT STEPS:
     1. Update Android app to use max-over-exemplars (see FORMAT REFERENCE above)

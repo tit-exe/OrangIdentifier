@@ -1,43 +1,40 @@
 """
 V6_plateau_v2.py — OrangIdentifier V6
 =======================================
-Graphique "nb de photos d'entraînement → confiance de reconnaissance".
+Graph "number of training photos -> recognition confidence".
 
-Protocole (sans fuite de données) :
-┌──────────────────────────────────────────────────────────────────────┐
-│  Pour chaque individu zoo avec ≥ MIN_TOTAL crops :                    │
-│    1. Split TRAIN 75% / TEST 25% — déterministe (seed=42+i), AVANT   │
-│       tout calcul de qualité ou de centroïde                          │
-│    2. Pour N dans N_VALUES :                                          │
-│         Répéter K_MC fois :                                           │
-│           - tirer N crops au hasard dans TRAIN (sans remise*)         │
-│           - prototype = L2_normalize( mean( embs[tirés] ) )           │
-│           - score_TP  = mean( dot(prototype, TEST embs) )             │
-│         → mean_TP[N], std_TP[N]  (sur K_MC tirages = variance réelle) │
-└──────────────────────────────────────────────────────────────────────┘
-  *avec remise si N > len(train), équivalent à ré-utiliser le centroïde
-  complet — signalé dans le résumé terminal.
+Protocol (no data leakage):
+  For each zoo individual with >= MIN_TOTAL crops:
+    1. Split TRAIN 75% / TEST 25%, deterministic (seed=42+i), BEFORE any
+       quality or centroid computation.
+    2. For N in N_VALUES, repeat K_MC times:
+         - draw N random crops from TRAIN (without replacement*)
+         - prototype = L2_normalize( mean( embs[drawn] ) )
+         - score_TP  = mean( dot(prototype, TEST embs) )
+       -> mean_TP[N], std_TP[N]  (over K_MC draws = real variance)
+  *with replacement if N > len(train), equivalent to reusing the full
+  centroid, reported in the terminal summary.
 
-Garanties :
-  - test set figé AVANT tout calcul                         [no leak]
-  - aucune info des embeddings dans le split                [no leak]
-  - sampling aléatoire (pas top-N qualité) = scénario terrain réaliste
-  - K_MC=200 tirages → variance honnête                     [robuste]
-  - cache embeddings sur disque → reproductible             [audit]
+Guarantees:
+  - test set frozen BEFORE any computation      [no leak]
+  - no embedding information in the split        [no leak]
+  - random sampling (not top-N quality) = realistic field scenario
+  - K_MC=200 draws -> honest variance            [robust]
+  - embeddings cached on disk -> reproducible    [audit]
 
-FP rate : fraction de crops wild dont le score dépasse le seuil contre
-          AU MOINS UN individu de la galerie simulée → métrique terrain.
+FP rate: fraction of wild crops whose score exceeds the threshold against
+         AT LEAST ONE individual of the simulated gallery -> field metric.
 
 Sorties (dans results/) :
   03a_v2_plateau_confidence.png  — figure principale (confiance vs N)
   03b_v2_plateau_tradeoff.png    — variance MC + FP rate vs N
-  03c_v2_plateau_table.png       — tableau récapitulatif
+  03c_v2_plateau_table.png       - summary table
 
 RUN :
     conda activate orangs
     python v6_megadesc_arcface_15ind/03_tune_threshold.py
 
-    # Recalculer embeddings si nouveaux crops ajoutés :
+    # Recompute embeddings if new crops were added:
     python v6_megadesc_arcface_15ind/03_tune_threshold.py --recache
 """
 
@@ -76,16 +73,16 @@ WILD_DIR = (REPO / "data" / "crops" / "wild")
 RESULTS  = (REPO / "output" / "v6" / "results")
 CACHE_F  = RESULTS / "emb_cache_plateau_v2.npz"
 
-THRESHOLD = 0.5371      # seuil galerie V6
+THRESHOLD = 0.5371      # V6 gallery threshold
 
 SEED      = 42
-TEST_FRAC = 0.25        # fraction hold-out pour les requêtes
+TEST_FRAC = 0.25        # hold-out fraction for the queries
 TEST_MIN  = 6           # minimum absolu de crops dans le test set
 TRAIN_MIN = 5           # minimum absolu de crops dans le train pool
 MIN_TOTAL = 15          # ignorer individus avec < MIN_TOTAL crops
 
 N_VALUES  = [1, 2, 3, 4, 5, 7, 10, 15, 20, 25]
-K_MC      = 200         # répétitions Monte Carlo par N
+K_MC      = 200         # Monte Carlo repetitions per N
 N_WILD    = 500         # max crops wild pour l'analyse FP
 BATCH     = 64
 IMG_SIZE  = 224
@@ -96,8 +93,8 @@ DEVICE = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 # Couleurs projet
 C_MEAN      = "#27500A"   # green_800 (moyenne)
 C_FILL      = "#639922"   # green_400 (bande ±std)
-C_THRESHOLD = "#A32D2D"   # confidence_low (seuil)
-C_FP        = "#c4501b"   # orange foncé (FP)
+C_THRESHOLD = "#A32D2D"   # confidence_low (threshold)
+C_FP        = "#c4501b"   # dark orange (FP)
 
 # ══════════════════════════════════════════════════════════════════
 # CLI
@@ -130,7 +127,7 @@ class _PathDS(Dataset):
 
 
 def collect_images(base_dirs, exclude=None):
-    """Collecte les images par individu depuis plusieurs dossiers sources."""
+    """Collects images per individual from several source folders."""
     excl = set(exclude or [])
     per_individual = {}
     for base in base_dirs:
@@ -142,13 +139,13 @@ def collect_images(base_dirs, exclude=None):
             imgs = [f for f in d.iterdir() if f.suffix in EXTS]
             if imgs:
                 per_individual.setdefault(d.name, []).extend(imgs)
-    # Dédupliquer et trier pour que l'ordre soit déterministe
+    # Deduplicate and sort so the order is deterministic
     return {k: sorted(set(v)) for k, v in per_individual.items()}
 
 
 @torch.no_grad()
 def embed_paths(backbone, paths):
-    """Retourne embeddings L2-normalisés, shape (len(paths), 768)."""
+    """Returns L2-normalised embeddings, shape (len(paths), 768)."""
     if not paths:
         return np.zeros((0, 768), dtype=np.float32)
     dl  = DataLoader(_PathDS(paths), batch_size=BATCH, num_workers=0)
@@ -161,9 +158,9 @@ def embed_paths(backbone, paths):
 # BACKBONE
 # ══════════════════════════════════════════════════════════════════
 def load_backbone():
-    print("Chargement backbone V6...")
+    print("Loading V6 backbone...")
     if not V6_BEST.exists():
-        raise FileNotFoundError(f"Checkpoint introuvable : {V6_BEST}")
+        raise FileNotFoundError(f"Checkpoint not found : {V6_BEST}")
     bb = timm.create_model("hf-hub:BVRA/MegaDescriptor-T-224", pretrained=False, num_classes=0)
     ck = torch.load(str(V6_BEST), map_location="cpu", weights_only=False)
     state = ck.get("backbone_state") or ck.get("model_state_dict") or ck
@@ -177,7 +174,7 @@ def build_or_load_cache(recache=False):
     RESULTS.mkdir(parents=True, exist_ok=True)
 
     if CACHE_F.exists() and not recache:
-        print(f"Cache trouvé : {CACHE_F.name}  (--recache pour recalculer)")
+        print(f"Cache found : {CACHE_F.name}  (--recache to recompute)")
         data = np.load(CACHE_F, allow_pickle=True)
         names     = list(data["individuals"])
         zoo_embs  = {n: data[f"zoo_{n}"] for n in names}
@@ -211,7 +208,7 @@ def build_or_load_cache(recache=False):
     save["wild_embs"]    = wild_embs
     save["individuals"]  = np.array(list(zoo_embs.keys()))
     np.savez_compressed(CACHE_F, **save)
-    print(f"  Cache sauvegardé : {CACHE_F}")
+    print(f"  Cache saved : {CACHE_F}")
 
     return zoo_embs, wild_embs
 
@@ -220,7 +217,7 @@ def build_or_load_cache(recache=False):
 # ══════════════════════════════════════════════════════════════════
 def make_split(n_total, seed):
     """
-    Split déterministe TRAIN/TEST basé uniquement sur n_total et seed.
+    Deterministic TRAIN/TEST split based only on n_total and seed.
     Aucune info des embeddings n'influence le split.
     Retourne (train_idx, test_idx) en numpy int arrays.
     """
@@ -239,7 +236,7 @@ def make_split(n_total, seed):
 def analyse_individual(name, embs, splits, n_values, k_mc):
     """
     Retourne dict {N: {"mean": float, "std": float, "q25": float, "q75": float}}.
-    splits : (train_idx, test_idx) précalculés.
+    splits : (train_idx, test_idx) precomputed.
     """
     train_idx, test_idx = splits
 
@@ -281,19 +278,19 @@ def analyse_individual(name, embs, splits, n_values, k_mc):
     return results
 
 # ══════════════════════════════════════════════════════════════════
-# ANALYSE FP (wild contre galerie complète)
+# FP ANALYSIS (wild against the full gallery)
 # ══════════════════════════════════════════════════════════════════
 def analyse_fp(wild_embs, zoo_embs, all_splits, n_values, k_mc):
     """
-    Pour chaque N : fraction de crops wild dont le score dépasse le seuil
-    contre AU MOINS UN individu de la galerie simulée.
-    Utilise les mêmes splits que l'analyse TP.
+    For each N: fraction of wild crops whose score exceeds the threshold
+    against AT LEAST ONE individual of the simulated gallery.
+    Uses the same splits as the TP analysis.
     """
     if len(wild_embs) == 0:
-        print("  [AVERTISSEMENT] Pas de crops wild — FP rate non calculé.")
+        print("  [WARNING] No wild crops, FP rate not computed.")
         return {}
 
-    # Individus valides pour la galerie simulée
+    # Valid individuals for the simulated gallery
     valid = [(n, zoo_embs[n], all_splits[n][0])   # name, embs, train_idx
              for n in sorted(all_splits)
              if len(all_splits[n][0]) >= 1]
@@ -322,7 +319,7 @@ def analyse_fp(wild_embs, zoo_embs, all_splits, n_values, k_mc):
                 fp_rates[k] = 0.0
                 continue
 
-            # Score de chaque crop wild contre le meilleur individu de la galerie
+            # Score of each wild crop against the best individual of the gallery
             protos_mat  = np.stack(protos, axis=0)   # (n_ind, 768)
             best_scores = (wild_embs @ protos_mat.T).max(axis=1)  # (n_wild,)
             fp_rates[k] = float((best_scores >= THRESHOLD).mean())
@@ -338,7 +335,7 @@ def analyse_fp(wild_embs, zoo_embs, all_splits, n_values, k_mc):
 # DÉTECTION PLATEAU
 # ══════════════════════════════════════════════════════════════════
 def detect_plateau(res, tol=0.005):
-    """Premier N où le gain absolu sur la mean est < tol."""
+    """First N where the absolute gain on the mean is < tol."""
     ns    = sorted(res.keys())
     means = [res[n]["mean"] for n in ns]
     for i in range(1, len(ns)):
@@ -406,15 +403,15 @@ def fig_confidence(all_results, n_values, out_path):
                 )
                 break
 
-    # Seuil de rejet
+    # Rejection threshold
     ax.axhline(THRESHOLD, color=C_THRESHOLD, lw=1.8, linestyle=":",
-               zorder=9, label=f"Seuil de rejet ({THRESHOLD:.4f})")
+               zorder=9, label=f"Rejection threshold ({THRESHOLD:.4f})")
 
-    ax.set_xlabel("Nombre de photos d'entraînement (N)", fontsize=12)
-    ax.set_ylabel("Confiance de reconnaissance (similarité cosinus)", fontsize=12)
+    ax.set_xlabel("Number of training photos (N)", fontsize=12)
+    ax.set_ylabel("Recognition confidence (cosine similarity)", fontsize=12)
     ax.set_title(
-        f"V6 — Confiance de reconnaissance vs. nombre de photos d'entraînement\n"
-        f"({len(all_results)} individus · hold-out 25% · Monte Carlo K={K_MC} · sampling aléatoire)",
+        f"V6 - Recognition confidence vs. number of training photos\n"
+        f"({len(all_results)} individuals - hold-out 25% - Monte Carlo K={K_MC} - random sampling)",
         fontsize=11,
     )
     ax.set_xlim(0, max(n_values) + 1)
@@ -435,7 +432,7 @@ def fig_confidence(all_results, n_values, out_path):
 def fig_tradeoff(all_results, fp_res, n_values, out_path):
     fig, axes = plt.subplots(1, 2, figsize=(15, 6))
     fig.suptitle(
-        f"V6 — Stabilité du prototype (variance Monte Carlo) et risque de faux positif",
+        f"V6 - Prototype stability (Monte Carlo variance) and false positive risk",
         fontsize=12,
     )
 
@@ -456,14 +453,14 @@ def fig_tradeoff(all_results, fp_res, n_values, out_path):
                  for n in ns_avail]
 
     ax.plot(ns_avail, std_means, color=C_MEAN, lw=2.5, marker="o", markersize=6,
-            label="Std MC moyen (tous individus)")
+            label="Mean MC Std (all individuals)")
     ax.plot(ns_avail, std_maxs,  color=C_FILL, lw=1.5, marker="s", markersize=4,
             linestyle="--", label="Std MC max (pire individu)")
     ax.fill_between(ns_avail, std_means, std_maxs, alpha=0.15, color=C_FILL)
     ax.set_xlabel("N exemplaires", fontsize=11)
     ax.set_ylabel("Écart-type Monte Carlo (×100)", fontsize=11)
     ax.set_title(
-        "Variance du prototype selon N photos\n(plus faible = prototype stable = reproductible en terrain)",
+        "Prototype variance vs N photos\n(lower = stable prototype = reproducible in the field)",
         fontsize=10,
     )
     ax.set_xlim(0, max(n_values) + 1)
@@ -486,14 +483,14 @@ def fig_tradeoff(all_results, fp_res, n_values, out_path):
                          alpha=0.2, color=C_FP, label="±1 std")
         ax.set_ylim(0)
     else:
-        ax.text(0.5, 0.5, "Données wild indisponibles",
+        ax.text(0.5, 0.5, "Wild data unavailable",
                 ha="center", va="center", transform=ax.transAxes, fontsize=11)
 
     ax.set_xlabel("N exemplaires", fontsize=11)
-    ax.set_ylabel("Crops wild acceptés comme connus (%)", fontsize=11)
+    ax.set_ylabel("Wild crops accepted as known (%)", fontsize=11)
     ax.set_title(
         "Taux de faux positifs en terrain vs N\n"
-        "(crops wild scorés contre toute la galerie simulée)",
+        "(wild crops scored against the whole simulated gallery)",
         fontsize=10,
     )
     ax.set_xlim(0, max(n_values) + 1)
@@ -509,7 +506,7 @@ def fig_tradeoff(all_results, fp_res, n_values, out_path):
 
 
 # ══════════════════════════════════════════════════════════════════
-# FIGURE 3 — Tableau récapitulatif
+# FIGURE 3 - Summary table
 # ══════════════════════════════════════════════════════════════════
 def fig_table(all_results, n_values, out_path):
     rows = []
@@ -556,7 +553,7 @@ def fig_table(all_results, n_values, out_path):
 
     ax.set_title(
         f"V6 — Plateau de confiance (Monte Carlo K={K_MC}, hold-out 25%)\n"
-        f"! = conf. max < seuil {THRESHOLD:.4f}   ·   Std MC N=1 = variance avec 1 seule photo",
+        f"! = max conf. < threshold {THRESHOLD:.4f}   -   MC Std N=1 = variance with a single photo",
         fontsize=10, fontweight="bold", pad=16,
     )
     plt.tight_layout()
@@ -585,17 +582,17 @@ def print_summary(all_results):
 
         c5  = res.get(5,  {}).get("mean", float("nan"))
         c10 = res.get(10, {}).get("mean", float("nan"))
-        flag = "  ! SOUS SEUIL" if cmax < THRESHOLD else ""
+        flag = "  ! BELOW THRESHOLD" if cmax < THRESHOLD else ""
 
         wr_ns = [n for n in ns if res[n].get("with_replacement")]
         wr_note = f"  [sampling avec remise pour N>={min(wr_ns)}]" if wr_ns else ""
 
         print(f"  {name:<14} {p:>10}  {c5:>8.3f}  {c10:>9.3f}  {cmax:>9.3f}{flag}{wr_note}")
 
-    print(f"\n  Plateau médian            : N = {int(np.median(plateaux))}")
+    print(f"\n  Median plateau            : N = {int(np.median(plateaux))}")
     print(f"  Plateau P75 (pire 25%)    : N = {int(np.percentile(plateaux, 75))}")
     print(f"\n  Recommandation terrain    : ≥ {int(np.percentile(plateaux, 75))} photos")
-    print(f"  (au-delà le gain de confiance est < 0.5 points)")
+    print(f"  (beyond that the confidence gain is < 0.5 points)")
     print(f"{'═'*72}\n")
 
 
@@ -606,7 +603,7 @@ if __name__ == "__main__":
     random.seed(SEED); np.random.seed(SEED)
 
     print(f"Device    : {DEVICE}")
-    print(f"Protocole : hold-out {int(TEST_FRAC*100)}%, Monte Carlo K={K_MC}, sampling aléatoire (scénario terrain)")
+    print(f"Protocol : hold-out {int(TEST_FRAC*100)}%, Monte Carlo K={K_MC}, random sampling (field scenario)")
 
     # 1. Embeddings
     zoo_embs, wild_embs = build_or_load_cache(recache=args.recache)
@@ -615,10 +612,10 @@ if __name__ == "__main__":
     zoo_valid = {k: v for k, v in zoo_embs.items() if len(v) >= MIN_TOTAL}
     skipped   = sorted(set(zoo_embs) - set(zoo_valid))
     if skipped:
-        print(f"\nIgnorés (< {MIN_TOTAL} crops) : {', '.join(skipped)}")
-    print(f"\n{len(zoo_valid)} individus analysés\n")
+        print(f"\nSkipped (< {MIN_TOTAL} crops) : {', '.join(skipped)}")
+    print(f"\n{len(zoo_valid)} individuals analysed\n")
 
-    # 3. Précalculer les splits (UN seul appel par individu → cohérence TP / FP)
+    # 3. Precompute the splits (one call per individual -> TP / FP consistency)
     all_splits = {}
     for ci, name in enumerate(sorted(zoo_valid)):
         train_idx, test_idx = make_split(len(zoo_valid[name]), seed=SEED + ci)
@@ -641,20 +638,20 @@ if __name__ == "__main__":
             flag = " !" if cmax < THRESHOLD else ""
             print(f"  {name:<14}: conf@5={c5:.3f}  conf_max={cmax:.3f}  plateau≈N={p}{flag}")
         else:
-            print(f"  {name:<14}: ignoré (split insuffisant)")
+            print(f"  {name:<14}: skipped (insufficient split)")
 
     # 5. Analyse FP
     print("\nAnalyse FP wild...")
     fp_results = analyse_fp(wild_embs, zoo_valid, all_splits, N_VALUES, K_MC)
     if fp_results:
         fp_mean_at_10 = fp_results.get(10, {}).get("mean", float("nan"))
-        print(f"  FP rate moyen à N=10 : {fp_mean_at_10*100:.2f}%")
+        print(f"  Mean FP rate at N=10 : {fp_mean_at_10*100:.2f}%")
     else:
-        print("  (pas de données wild)")
+        print("  (no wild data)")
 
     # 6. Figures
     RESULTS.mkdir(parents=True, exist_ok=True)
-    print("\nGénération des figures...")
+    print("\nGenerating figures...")
     fig_confidence(all_results, N_VALUES,
                    RESULTS / "03a_v2_plateau_confidence.png")
     fig_tradeoff(all_results, fp_results, N_VALUES,
@@ -662,6 +659,6 @@ if __name__ == "__main__":
     fig_table(all_results, N_VALUES,
               RESULTS / "03c_v2_plateau_table.png")
 
-    # 7. Résumé
+    # 7. Summary
     print_summary(all_results)
     print(f"Figures dans : {RESULTS}\n")

@@ -246,7 +246,7 @@ def get_transforms():
         T.RandomGrayscale(p=0.05),
         T.RandomPerspective(distortion_scale=0.25, p=0.3),
         T.GaussianBlur(kernel_size=5, sigma=(0.1, 2.0)),
-        # Cache aléatoirement une petite zone (simule occlusion partielle)
+        # Randomly hides a small area (simulates partial occlusion)
         T.ToTensor(),
         T.RandomErasing(p=0.15, scale=(0.02, 0.12), ratio=(0.3, 3.3), value='random'),
         norm,
@@ -262,7 +262,7 @@ def get_transforms():
     return train_tf, val_tf
 
 # =============================================================================
-# WEIGHTED SAMPLER — équilibre les classes sous-représentées
+# WEIGHTED SAMPLER - balances the under-represented classes
 # =============================================================================
 
 def make_sampler(labels):
@@ -276,11 +276,11 @@ def make_sampler(labels):
     )
 
 # =============================================================================
-# MODÈLE — ResNet50 avec tête personnalisée
+# MODEL - ResNet50 with a custom head
 # =============================================================================
 
 def creer_modele(n_classes):
-    # IMAGENET1K_V2 = meilleure accuracy que V1, important pour transfer learning
+    # IMAGENET1K_V2 = better accuracy than V1, important for transfer learning
     model = models.resnet50(weights=models.ResNet50_Weights.IMAGENET1K_V2)
 
     in_feat = model.fc.in_features
@@ -291,7 +291,7 @@ def creer_modele(n_classes):
     return model.to(DEVICE)
 
 def geler_backbone(model):
-    """Gèle tout sauf fc (tête)."""
+    """Freezes everything except fc (the head)."""
     for name, param in model.named_parameters():
         param.requires_grad = ('fc' in name)
 
@@ -300,7 +300,7 @@ def degeler_backbone(model):
         p.requires_grad = True
 
 def get_optimizer_phase2(model):
-    """Optimiseur à learning rates différentiels backbone/tête."""
+    """Optimiser with differential backbone/head learning rates."""
     backbone_params = [p for n, p in model.named_parameters() if 'fc' not in n and p.requires_grad]
     head_params     = [p for n, p in model.named_parameters() if 'fc' in n and p.requires_grad]
     return optim.AdamW([
@@ -309,7 +309,7 @@ def get_optimizer_phase2(model):
     ], weight_decay=WEIGHT_DECAY)
 
 # =============================================================================
-# MIXUP — mélange paires d'images + labels
+# MIXUP - blends pairs of images + labels
 # =============================================================================
 
 def mixup_data(x, y, alpha=0.2):
@@ -317,19 +317,19 @@ def mixup_data(x, y, alpha=0.2):
     if alpha <= 0:
         return x, y, y, 1.0
     lam = float(np.random.beta(alpha, alpha))
-    lam = max(lam, 1 - lam)  # toujours >= 0.5 → image dominante préservée
+    lam = max(lam, 1 - lam)  # always >= 0.5 -> dominant image preserved
     idx = torch.randperm(x.size(0), device=x.device)
     x_mix = lam * x + (1 - lam) * x[idx]
     return x_mix, y, y[idx], lam
 
 def mixup_loss(logits, ya, yb, lam):
-    """Perte Mixup = somme pondérée sur les deux labels."""
+    """Mixup loss = weighted sum over the two labels."""
     loss_a = F.cross_entropy(logits, ya, label_smoothing=LABEL_SMOOTH)
     loss_b = F.cross_entropy(logits, yb, label_smoothing=LABEL_SMOOTH)
     return lam * loss_a + (1 - lam) * loss_b
 
 # =============================================================================
-# EPOCH D'ENTRAÎNEMENT
+# TRAINING EPOCHS
 # =============================================================================
 
 def train_epoch(model, loader, optimizer, use_mixup):
@@ -401,7 +401,7 @@ def val_epoch(model, loader):
             np.array(all_preds), np.array(all_labs), np.array(all_confs))
 
 # =============================================================================
-# BOUCLE D'ENTRAÎNEMENT PRINCIPALE
+# MAIN TRAINING LOOP
 # =============================================================================
 
 def train_model(model, train_loader, val_loader, n_classes):
@@ -411,10 +411,10 @@ def train_model(model, train_loader, val_loader, n_classes):
     patience_count = 0
 
     # ──────────────────────────────────────────────
-    # PHASE 1 — Backbone gelé, tête seulement
+    # PHASE 1 - Backbone frozen, head only
     # ──────────────────────────────────────────────
     title(f"PHASE 1 / 2 — HEAD ONLY  ({EPOCHS_FREEZE} epochs)")
-    print(f"  Backbone ImageNet gelé — LR tête = {LR_HEAD}")
+    print(f"  ImageNet backbone frozen - head LR = {LR_HEAD}")
     print(f"  Pas de Mixup en phase 1 (stabilise la convergence initiale)")
 
     geler_backbone(model)
@@ -441,19 +441,19 @@ def train_model(model, train_loader, val_loader, n_classes):
         if v_acc > best_val_acc:
             best_val_acc = v_acc
             best_state   = {k: v.clone() for k, v in model.state_dict().items()}
-            print(f"  * Nouveau meilleur val acc : {best_val_acc*100:.2f}%")
+            print(f"  * New best val acc : {best_val_acc*100:.2f}%")
 
         elapsed = time.time() - t_phase1
         eta_p1  = elapsed / epoch * (EPOCHS_FREEZE - epoch)
         print(f"  Elapsed : {fmt_time(elapsed)}  |  ETA phase 1 : {fmt_time(eta_p1)}")
 
     # ──────────────────────────────────────────────
-    # PHASE 2 — Fine-tuning complet, LR différentiel
+    # PHASE 2 - Full fine-tuning, differential LR
     # ──────────────────────────────────────────────
     title(f"PHASE 2 / 2 — FULL FINE-TUNING  (max {EPOCHS_UNFREEZE} epochs)")
-    print(f"  LR backbone = {LR_BACKBONE}  |  LR tête = {LR_HEAD}")
+    print(f"  LR backbone = {LR_BACKBONE}  |  LR head = {LR_HEAD}")
     print(f"  Mixup α={MIXUP_ALPHA}  |  Early stop patience={PATIENCE}")
-    print(f"  La phase 2 s'arrête automatiquement si pas d'amélioration\n")
+    print(f"  Phase 2 stops automatically if there is no improvement\n")
 
     degeler_backbone(model)
     optimizer = get_optimizer_phase2(model)
@@ -480,11 +480,11 @@ def train_model(model, train_loader, val_loader, n_classes):
             best_val_acc   = v_acc
             best_state     = {k: v.clone() for k, v in model.state_dict().items()}
             patience_count = 0
-            print(f"  * Nouveau meilleur : {best_val_acc*100:.2f}%  [sauvegardé]")
+            print(f"  * New best : {best_val_acc*100:.2f}%  [saved]")
         else:
             patience_count += 1
             if patience_count >= PATIENCE:
-                print(f"\n  Early stopping déclenché à l'epoch {epoch + EPOCHS_FREEZE}")
+                print(f"\n  Early stopping triggered at epoch {epoch + EPOCHS_FREEZE}")
                 break
 
         elapsed_p2 = time.time() - t_phase2
@@ -495,9 +495,9 @@ def train_model(model, train_loader, val_loader, n_classes):
             eta = 0
         print(f"  Best = {best_val_acc*100:.2f}%  |  ETA : {fmt_time(eta)}")
 
-    # Recharger le meilleur modèle
+    # Reload the best model
     model.load_state_dict(best_state)
-    print(f"\n  Meilleur val accuracy : {best_val_acc*100:.2f}%")
+    print(f"\n  Best val accuracy : {best_val_acc*100:.2f}%")
     return model, history, best_val_acc, preds_v, labs_v, confs_v
 
 # =============================================================================
@@ -510,9 +510,9 @@ def calibrate_threshold(confs, preds, labs):
 
     Logique :
       - Find threshold T such that conf < T → "unknown"
-      - On le fixe au 5e percentile des prédictions CORRECTES :
-        * 95% des bonnes prédictions passent → très peu de faux rejets
-        * Toutes les prédictions trop incertaines sont rejetées
+      - It is set at the 5th percentile of the CORRECT predictions:
+        * 95% of the good predictions pass -> very few false rejects
+        * All predictions that are too uncertain are rejected
       - In practice, true unknowns will have conf << this threshold
 
     Note: Without unknown images in the val set, calibration is
@@ -522,10 +522,10 @@ def calibrate_threshold(confs, preds, labs):
     errors   = confs[preds != labs]
 
     print(f"\n  Distribution des confidences sur val set :")
-    print(f"    Prédictions correctes — médiane : {np.median(corrects):.3f}  "
+    print(f"    Correct predictions - median : {np.median(corrects):.3f}  "
           f"| min : {corrects.min():.3f}  | p5 : {np.percentile(corrects, 5):.3f}")
     if len(errors):
-        print(f"    Prédictions erronées  — médiane : {np.median(errors):.3f}  "
+        print(f"    Wrong predictions   - median : {np.median(errors):.3f}  "
               f"| max : {errors.max():.3f}")
         pct_erreurs_capturees = (errors < np.percentile(corrects, 5)).mean()
         print(f"    Errors captured by p5 threshold : {pct_erreurs_capturees*100:.1f}%")
@@ -553,7 +553,7 @@ def evaluate_test(model, test_loader, classes, threshold):
     if mask.sum() > 0:
         acc_filtre = (preds[mask] == labs[mask]).mean()
         print(f"  Accuracy with rejection (≥{threshold:.2f}) : {acc_filtre*100:.2f}%  "
-              f"({(1-mask.mean())*100:.1f}% images rejetées)")
+              f"({(1-mask.mean())*100:.1f}% images rejected)")
     else:
         acc_filtre = acc
 
@@ -583,7 +583,7 @@ def evaluate_test(model, test_loader, classes, threshold):
 @torch.no_grad()
 def extraire_embeddings(model, loader):
     """
-    Extrait les vecteurs d'embedding (2048-dim) avant la couche FC.
+    Extract the embedding vectors (2048-dim) before the FC layer.
     Utile pour :
       1. Unknown detection by cosine distance (more robust than softmax threshold)
       2. Fine-tuning with new individuals (kNN in embedding space)
@@ -616,10 +616,10 @@ def save_plots(history, classes, preds_test, labs_test):
     ep = range(1, len(history['train_loss']) + 1)
     sep_phase = EPOCHS_FREEZE
 
-    # ── Courbes loss / accuracy ──────────────────────────────────────
+    # -- Loss / accuracy curves ──────────────────────────────────────
     fig, axes = plt.subplots(1, 2, figsize=(14, 5))
     fig.suptitle(
-        "Entraînement ResNet50 — Orangs-outangs ()",
+        "ResNet50 training - Orangutans",
         fontsize=13, fontweight='bold'
     )
 
@@ -656,8 +656,8 @@ def save_plots(history, classes, preds_test, labs_test):
         xticklabels=classes, yticklabels=classes,
         linewidths=0.5, vmin=0, vmax=100, ax=ax
     )
-    ax.set_xlabel('Prédit', fontsize=11)
-    ax.set_ylabel('Réel',   fontsize=11)
+    ax.set_xlabel('Predicted', fontsize=11)
+    ax.set_ylabel('True',    fontsize=11)
     ax.set_title('Matrice de confusion — Test set (%)', fontsize=13)
     plt.xticks(rotation=35, ha='right')
     plt.tight_layout()
@@ -667,14 +667,14 @@ def save_plots(history, classes, preds_test, labs_test):
     print(f"  Confusion  → {path.name}")
 
 # =============================================================================
-# SAUVEGARDE
+# SAVE
 # =============================================================================
 
 def save_model(model, classes, threshold, acc_test,
                        embed_train, labs_embed, history):
     MODELS_DIR.mkdir(parents=True, exist_ok=True)
 
-    # Modèle complet
+    # Full model
     torch.save({
         'model_state':  model.state_dict(),
         'classes':      classes,
@@ -743,54 +743,55 @@ def final_report(classes, acc_test, threshold, history, t_total):
     print()
 
     if acc_test >= 0.92:
-        note = "EXCELLENT — Prêt pour déploiement Android/TFLite"
+        note = "EXCELLENT - Ready for Android/TFLite deployment"
     elif acc_test >= 0.85:
-        note = "BON — Utilisable, quelques confusions possibles"
+        note = "GOOD - Usable, some confusions possible"
     elif acc_test >= 0.75:
-        note = "CORRECT — Ajouter images pour Jula/PUTRI si possible"
+        note = "OK - Add images for Jula/PUTRI if possible"
     else:
-        note = "INSUFFISANT — Dataset trop petit pour certaines classes"
+        note = "INSUFFICIENT - Dataset too small for some classes"
     print(f"  {note}")
 
     print(f"""
   ┌──────────────────────────────────────────────────────────┐
-  │  PROCHAINES ÉTAPES                                        │
   │                                                          │
-  │  1. Exporter en TFLite                                   │
-  │     → python scripts/5_export_tflite.py                  │
+  │  NEXT STEPS                                              │
   │                                                          │
-  │  2. Pipeline vidéo (YOLO + ResNet50)                     │
-  │     → python scripts/5_video_pipeline.py                 │
+  │  1. Export to TFLite                                     │
+  │     -> python scripts/5_export_tflite.py                 │
   │                                                          │
-  │  3. Add a new individual (ex: Kawan)               │
-  │     → Voir section AJOUT INDIVIDU ci-dessous             │
+  │  2. Video pipeline (YOLO + ResNet50)                     │
+  │     -> python scripts/5_video_pipeline.py                │
+  │                                                          │
+  │  3. Add a new individual (e.g. Kawan)                    │
+  │     -> See the ADD INDIVIDUAL section below              │
   └──────────────────────────────────────────────────────────┘
 """)
 
     print(f"""  ═══════════════════════════════════════════════════════════
-  AJOUT D'UN NOUVEL INDIVIDU — MARCHE À SUIVRE
+  ADDING A NEW INDIVIDUAL, STEP BY STEP
   ═══════════════════════════════════════════════════════════
 
-  Quand un nouvel orang arrive au zoo :
+  When a new orangutan arrives at the zoo:
 
-  1. Photos → PHOTOS/NouvelIndividu/*.jpg
-  2. Lance 3_extract_faces.py   (YOLO v2 détecte les faces)
-  3. Révise les crops manuellement (3b_reviser_faces.py)
-  4. Lance 4b_ajouter_individu.py  ← script à créer
+  1. Photos -> PHOTOS/NewIndividual/*.jpg
+  2. Run 3_extract_faces.py   (YOLO v2 detects the faces)
+  3. Review the crops by hand (3b_reviser_faces.py)
+  4. Run 4b_ajouter_individu.py  <- script to be created
 
-     Ce script :
+     This script:
        a) Charge backbone saved by this script (pre-trained backbone)
-       b) Remplace la tête : FC(10) → FC(11)
-       c) Initialise le nouveau neurone proprement
-       d) Fine-tune UNIQUEMENT la tête (backbone gelé)
-          → Durée : ~5-10 minutes seulement
-          → Pas besoin de réentraîner tout le modèle
+       b) Replaces the head: FC(10) -> FC(11)
+       c) Initialises the new neuron cleanly
+       d) Fine-tunes ONLY the head (backbone frozen)
+          -> Duration: about 5-10 minutes only
+          -> No need to retrain the whole model
 
-  5. Génère nouveau resnet_classifier.pt + metadata.json
+  5. Generates a new resnet_classifier.pt + metadata.json
 
   UNKNOWN DETECTION in the field:
-    If confidence < {threshold:.2f} → display "Unknown individual"
-    (Ajuster dans metadata.json si trop/pas assez de rejets)
+    If confidence < {threshold:.2f} -> display "Unknown individual"
+    (Adjust in metadata.json if too many / too few rejections)
 
   ═══════════════════════════════════════════════════════════
 """)
@@ -834,16 +835,16 @@ if __name__ == "__main__":
     test_loader  = DataLoader(test_ds,  batch_size=BATCH_SIZE, shuffle=False,
                               num_workers=4, pin_memory=True, persistent_workers=True)
 
-    # ── 4. Modèle ───────────────────────────────────────────────────
+    # -- 4. Model ───────────────────────────────────────────────────
     title("MODEL")
     model  = creer_modele(n_classes)
     n_par  = sum(p.numel() for p in model.parameters())
     n_tr   = sum(p.numel() for p in model.parameters() if p.requires_grad)
-    print(f"  ResNet50 : {n_par/1e6:.1f}M paramètres total")
-    print(f"  Phase 1  : {sum(p.numel() for n,p in model.named_parameters() if 'fc' in n)/1e6:.2f}M entraînables (tête)")
-    print(f"  Phase 2  : {n_tr/1e6:.1f}M entraînables (tout)")
+    print(f"  ResNet50 : {n_par/1e6:.1f}M parameters total")
+    print(f"  Phase 1  : {sum(p.numel() for n,p in model.named_parameters() if 'fc' in n)/1e6:.2f}M trainable (head)")
+    print(f"  Phase 2  : {n_tr/1e6:.1f}M trainable (all)")
 
-    # ── 5. Entraînement ─────────────────────────────────────────────
+    # -- 5. Training ─────────────────────────────────────────────
     model, history, best_val, preds_v, labs_v, confs_v = train_model(
         model, train_loader, val_loader, n_classes
     )
@@ -866,9 +867,9 @@ if __name__ == "__main__":
     # ── 9. Graphiques ───────────────────────────────────────────────
     title("PLOTS")
     save_plots(history, classes, preds_test, labs_test)
-    print(f"  Dossier : {OUT_DIR}")
+    print(f"  Folder : {OUT_DIR}")
 
-    # ── 10. Sauvegarde ──────────────────────────────────────────────
+    # -- 10. Save ──────────────────────────────────────────────
     title("SAVING")
     save_model(model, classes, threshold, acc_test,
                        embed_train, labs_embed, history)
@@ -881,26 +882,26 @@ if __name__ == "__main__":
 # FIN DU SCRIPT
 # =============================================================================
 #
-# PERFORMANCES ATTENDUES (sur tes 1986 images corrigées à la main) :
+# EXPECTED PERFORMANCE (on the 1986 hand-corrected images):
 #
 #   Individuals > 150 images (Auti, Mathai, Molly, PULCO, Sari, Sinta, Ujian) :
-#     → Accuracy individuelle : 88-95%
+#     -> per-individual accuracy: 88-95%
 #
 #   Individuals < 100 images (Jula=63, NOAH=76, PUTRI=56) :
-#     → Accuracy individuelle : 70-85%
-#     → Ce n'est pas un bug : le modèle est limité par le dataset
-#     → Solution : photographier davantage Jula/PUTRI/NOAH
+#     -> per-individual accuracy: 70-85%
+#     -> This is not a bug: the model is limited by the dataset
+#     -> Solution: photograph Jula/PUTRI/NOAH more
 #
-#   Accuracy globale test set : 85-93% (vs YOLO 99.4%)
+#   Overall test-set accuracy: 85-93% (vs YOLO 99.4%)
 #
-#   Pourquoi pas 99% comme YOLO ?
-#     YOLO détecte UNE classe (visage) sur 1986 images → tâche simple
-#     ResNet distinguishes 10 individuals → tâche bien plus difficile
-#     Pour comparaison : Face ID Apple = ~95% en conditions idéales
+#   Why not 99% like YOLO?
+#     YOLO detects ONE class (face) over 1986 images -> simple task
+#     ResNet distinguishes 10 individuals -> much harder task
+#     For comparison: Apple Face ID = ~95% in ideal conditions
 #
-#   DURÉE D'ENTRAÎNEMENT (RTX 3050, 1986 images) :
+#   TRAINING TIME (RTX 3050, 1986 images):
 #     Phase 1 (10 epochs)  : ~2 minutes
-#     Phase 2 (~30 epochs) : ~15 minutes  (early stop avant 90)
-#     Total estimé         : 20-35 minutes
+#     Phase 2 (~30 epochs) : ~15 minutes  (early stop before 90)
+#     Estimated total     : 20-35 minutes
 #
 # =============================================================================

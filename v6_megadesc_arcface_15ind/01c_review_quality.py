@@ -1,20 +1,20 @@
 """
 V6_2_review_quality.py — OrangIdentifier V6
 ============================================
-Étape 2 : Revue qualité des crops extraits par V6_1.
+Step 2: quality review of the crops extracted by V6_1.
 
-Lit quality_report.json, affiche les statistiques détaillées par individu,
-et déplace les crops trop sombres / trop flous vers <Individu>/_rejet/
+Reads quality_report.json, shows detailed statistics per individual,
+and moves crops that are too dark or too blurry to <Individual>/_rejet/
 si l'utilisateur confirme les seuils.
 
-Les crops dans _rejet/ ne seront PAS chargés par V6_3_train.py
-(load_dir exclut les dossiers commençant par "_").
+Crops in _rejet/ will NOT be loaded by V6_3_train.py
+(load_dir excludes folders starting with "_").
 
 RUN :
     conda activate orangs
     python v6_megadesc_arcface_15ind/01c_review_quality.py
 
-    # Appliquer des seuils personnalisés (sans interaction) :
+    # Apply custom thresholds (non-interactive):
     python v6_megadesc_arcface_15ind/01c_review_quality.py --auto --bright 0.25 --sharp 60
 """
 
@@ -42,20 +42,20 @@ RESULTS.mkdir(parents=True, exist_ok=True)
 # ══════════════════════════════════════════════════════════════════════════════
 parser = argparse.ArgumentParser()
 parser.add_argument("--auto",   action="store_true",
-                    help="Appliquer les seuils sans confirmation interactive")
+                    help="Apply thresholds without interactive confirmation")
 parser.add_argument("--bright", type=float, default=None,
-                    help="Seuil luminosité (défaut : interactif)")
+                    help="Brightness threshold (default: interactive)")
 parser.add_argument("--sharp",  type=float, default=None,
-                    help="Seuil netteté (défaut : interactif)")
+                    help="Sharpness threshold (default: interactive)")
 parser.add_argument("--dry-run", action="store_true",
-                    help="Afficher sans déplacer aucun fichier")
+                    help="Show without moving any file")
 ARGS = parser.parse_args()
 
 # ══════════════════════════════════════════════════════════════════════════════
-# CHARGEMENT
+# LOADING
 # ══════════════════════════════════════════════════════════════════════════════
 if not JSON_PATH.exists():
-    print(f"[ERROR] Rapport introuvable : {JSON_PATH}")
+    print(f"[ERROR] Report not found : {JSON_PATH}")
     print("        Lancez d'abord V6_1_extract_crops.py")
     raise SystemExit(1)
 
@@ -69,7 +69,7 @@ print("=" * 65)
 print("  V6_2_review_quality.py — Revue des crops")
 print(f"  {datetime.now():%Y-%m-%d %H:%M}")
 print("=" * 65)
-print(f"\n  {len(ok_entries)} crops valides sur {len(db)} photos analysées\n")
+print(f"\n  {len(ok_entries)} valid crops out of {len(db)} analysed photos\n")
 
 # ══════════════════════════════════════════════════════════════════════════════
 # STATISTIQUES PAR INDIVIDU
@@ -90,11 +90,11 @@ for ind in individuals:
     b_p = (s["brights"] < 0.20).mean() * 100
     sh_m = s["sharps"].mean()
     sh_p = (s["sharps"] < 80).mean() * 100
-    warn = "  ! SOMBRE" if b_p > 50 else ""
+    warn = "  ! DARK" if b_p > 50 else ""
     print(f"  {ind:<14} {n:>5} {b_m:>10.3f} {b_p:>11.0f}% {sh_m:>9.1f} {sh_p:>9.0f}%{warn}")
 
 # ══════════════════════════════════════════════════════════════════════════════
-# GRAPHE SCATTER : luminosité vs netteté par individu
+# SCATTER PLOT: brightness vs sharpness per individual
 # ══════════════════════════════════════════════════════════════════════════════
 COLORS = ["#3b82f6", "#16a34a", "#f97316", "#dc2626", "#9333ea"]
 fig, ax = plt.subplots(figsize=(10, 7))
@@ -103,11 +103,11 @@ for idx, ind in enumerate(individuals):
     ax.scatter(s["brights"], s["sharps"],
                alpha=0.30, s=10, color=COLORS[idx % len(COLORS)], label=ind)
 
-ax.axvline(0.20, color="red",    lw=1.5, linestyle="--", label="Seuil sombre (0.20)")
-ax.axhline(80,   color="orange", lw=1.5, linestyle="--", label="Seuil flou (80)")
-ax.set_xlabel("Luminosité crop [0–1]",     fontsize=11)
-ax.set_ylabel("Netteté (variance Laplacien)", fontsize=11)
-ax.set_title("V6 — Qualité des crops : luminosité × netteté", fontsize=12)
+ax.axvline(0.20, color="red",    lw=1.5, linestyle="--", label="Dark threshold (0.20)")
+ax.axhline(80,   color="orange", lw=1.5, linestyle="--", label="Blur threshold (80)")
+ax.set_xlabel("Crop brightness [0-1]",     fontsize=11)
+ax.set_ylabel("Sharpness (Laplacian variance)", fontsize=11)
+ax.set_title("V6 - Crop quality: brightness x sharpness", fontsize=12)
 ax.legend(fontsize=8, markerscale=3)
 ax.grid(alpha=0.3)
 plt.tight_layout()
@@ -117,41 +117,41 @@ plt.close()
 print(f"\n  Scatter → {scatter_path.name}")
 
 # ══════════════════════════════════════════════════════════════════════════════
-# SEUILS
+# THRESHOLDS
 # ══════════════════════════════════════════════════════════════════════════════
 print("\n" + "─" * 65)
-print("  Définition des seuils de rejet")
+print("  Setting the rejection thresholds")
 print("─" * 65)
 
 if ARGS.auto and ARGS.bright is not None and ARGS.sharp is not None:
     thresh_bright = ARGS.bright
     thresh_sharp  = ARGS.sharp
-    print(f"  Mode --auto : luminosité < {thresh_bright}  |  netteté < {thresh_sharp}")
+    print(f"  --auto mode : brightness < {thresh_bright}  |  sharpness < {thresh_sharp}")
 else:
-    print("\n  Entrez les seuils (laisser vide = pas de filtre sur ce critère) :")
-    b_in = input("  Seuil luminosité  [défaut 0.20, ex: 0.25] : ").strip()
-    s_in = input("  Seuil netteté     [défaut 80,   ex: 60   ] : ").strip()
+    print("\n  Enter the thresholds (leave empty = no filter on that criterion):")
+    b_in = input("  Brightness threshold  [default 0.20, e.g. 0.25] : ").strip()
+    s_in = input("  Sharpness threshold   [default 80,   e.g. 60   ] : ").strip()
     thresh_bright = float(b_in) if b_in else 0.20
     thresh_sharp  = float(s_in) if s_in else 80.0
 
-# ── Identifier les crops à rejeter ───────────────────────────────────────────
+# ── Identify the crops to reject ───────────────────────────────────────────
 to_reject = []
 for v in ok_entries:
     reject = False
     reasons = []
     if v["brightness"] < thresh_bright:
-        reject = True; reasons.append("sombre")
+        reject = True; reasons.append("dark")
     if v["sharpness"] < thresh_sharp:
-        reject = True; reasons.append("flou")
+        reject = True; reasons.append("blurry")
     if reject:
         to_reject.append((v, reasons))
 
-print(f"\n  → {len(to_reject)} crops à rejeter / {len(ok_entries)} total")
-print(f"\n  Résumé par individu :")
+print(f"\n  -> {len(to_reject)} crops to reject / {len(ok_entries)} total")
+print(f"\n  Summary per individual :")
 for ind in individuals:
     rej_i = [(v, r) for v, r in to_reject if v["individu"] == ind]
     keep  = len(stats[ind]["entries"]) - len(rej_i)
-    print(f"    {ind:<14}: {keep:3d} gardés  /  {len(rej_i):3d} rejetés")
+    print(f"    {ind:<14}: {keep:3d} kept  /  {len(rej_i):3d} rejected")
 
 # ══════════════════════════════════════════════════════════════════════════════
 # AVERTISSEMENT si un individu perd trop de crops
@@ -162,20 +162,20 @@ for ind in individuals:
     rej_i = sum(1 for v, r in to_reject if v["individu"] == ind)
     keep  = len(stats[ind]["entries"]) - rej_i
     if keep < MIN_CROPS:
-        print(f"  !  {ind} : seulement {keep} crops après filtre "
-              f"(minimum recommandé : {MIN_CROPS})")
-        print(f"     Envisager d'assouplir les seuils ou d'exclure cet individu du training.")
+        print(f"  !  {ind} : only {keep} crops after filtering "
+              f"(recommended minimum : {MIN_CROPS})")
+        print(f"     Consider relaxing the thresholds or excluding this individual from training.")
 
 # ══════════════════════════════════════════════════════════════════════════════
 # DÉPLACEMENT VERS _rejet/
 # ══════════════════════════════════════════════════════════════════════════════
 if ARGS.dry_run:
-    print("\n  --dry-run : aucun fichier déplacé.")
+    print("\n  --dry-run : no file moved.")
 elif not to_reject:
-    print("\n  Aucun crop à rejeter avec ces seuils.")
+    print("\n  No crop to reject with these thresholds.")
 else:
     if not ARGS.auto:
-        confirm = input(f"\n  Déplacer {len(to_reject)} crops vers _rejet/ ? [o/N] : ").strip().lower()
+        confirm = input(f"\n  Move {len(to_reject)} crops to _rejet/ ? [o/N] : ").strip().lower()
         do_move = confirm in ("o", "oui", "y", "yes")
     else:
         do_move = True
@@ -191,16 +191,16 @@ else:
             dst = dst_dir / src.name
             shutil.move(str(src), str(dst))
             moved += 1
-        print(f"\n  {moved} crops déplacés vers leurs dossiers _rejet/")
+        print(f"\n  {moved} crops moved to their _rejet/ folders")
         print("  (load_dir dans V6_3_train.py ignore automatiquement _rejet/)")
     else:
-        print("\n  Annulé — aucun fichier déplacé.")
+        print("\n  Cancelled, no file moved.")
 
 # ══════════════════════════════════════════════════════════════════════════════
 # DÉCOMPTE FINAL
 # ══════════════════════════════════════════════════════════════════════════════
 print("\n" + "─" * 65)
-print("  Crops disponibles pour l'entraînement V6 :")
+print("  Crops available for V6 training :")
 print("─" * 65)
 for ind in individuals:
     ind_dir = CROPS_DIR / ind
@@ -209,7 +209,7 @@ for ind in individuals:
                        if f.suffix in {".jpg",".jpeg",".png"} and not f.name.startswith("_")])
     else:
         n_final = 0
-    status = "✓" if n_final >= MIN_CROPS else "! INSUFFISANT"
+    status = "OK" if n_final >= MIN_CROPS else "! TOO FEW"
     print(f"  {ind:<14}: {n_final:3d} crops  {status}")
 
 print(f"""

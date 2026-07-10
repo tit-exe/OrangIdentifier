@@ -1,5 +1,5 @@
 # generate_v4_gallery.py
-# Génère embeddings_v4.json depuis v4_best.pt
+# Generate embeddings_v4.json from v4_best.pt
 # Run this BEFORE reorganize_final.py --run
 #
 # RUN:
@@ -55,7 +55,7 @@ tf = T.Compose([T.Resize(IMG_SIZE), T.CenterCrop(IMG_SIZE),
 print(f"Device : {DEVICE}")
 print(f"Loading {V4_MODEL.name}...")
 ckpt    = torch.load(str(V4_MODEL), map_location=DEVICE, weights_only=False)
-classes = ckpt["classes"]   # 40 individus
+classes = ckpt["classes"]   # 40 individuals
 emb_dim = ckpt.get("emb_dim", 768)
 
 model = timm.create_model("hf-hub:BVRA/MegaDescriptor-T-224",
@@ -119,12 +119,12 @@ for i, cls in enumerate(names):
 pos_m  = float(np.mean(pos_sims))
 neg_m  = float(np.mean(neg_sims))
 gap    = pos_m - neg_m
-# Seuil = milieu entre neg 95e percentile et pos 5e percentile
+# Threshold = midpoint between neg 95th percentile and pos 5th percentile
 thresh = float((np.percentile(neg_sims, 95) + np.percentile(pos_sims, 5)) / 2)
 thresh = round(max(0.15, min(0.40, thresh)), 4)
 
 print(f"  pos_mean={pos_m:.4f}  neg_mean={neg_m:.4f}  gap={gap:.4f}")
-print(f"  Threshold calibré : {thresh}")
+print(f"  Calibrated threshold : {thresh}")
 
 out = {
     "version":           "4.0-arcface-improved",

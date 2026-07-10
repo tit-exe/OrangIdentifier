@@ -3,7 +3,7 @@
 # 
 #
 # WHAT THIS FIXES (from stress test results):
-#   - Blur motion/focus : rupture at moderate -> add strong blur augmentation
+#   - Blur, motion and focus: collapse at moderate -> add strong blur augmentation
 #   - Low resolution    : rupture at moderate -> add low-res simulation
 #   - Combined          : rupture at moderate -> consequence of above two
 #
@@ -612,7 +612,7 @@ def make_plots(history, stress_results, deg_types, all_classes, gallery_data, po
     gs  = gridspec.GridSpec(4, 2, figure=fig, hspace=0.45, wspace=0.35)
 
     colors = {"V3": "#4488ff", "V4": "#00ff88"}
-    sev_labels = ["Aucune", "Legere", "Moderee", "Forte", "Extreme"]
+    sev_labels = ["None", "Light", "Moderate", "Strong", "Extreme"]
 
     # 1. Training curves
     ax = fig.add_subplot(gs[0, :])
@@ -628,7 +628,7 @@ def make_plots(history, stress_results, deg_types, all_classes, gallery_data, po
              linewidth=1.5, alpha=0.7, label="Train loss")
     ax2.set_ylabel("Loss", color="#ffaa00", fontsize=9)
     ax2.tick_params(colors="#ffaa00")
-    ax.set_title("Courbes d'entrainement V4", color="white", fontsize=12)
+    ax.set_title("V4 training curves", color="white", fontsize=12)
     ax.set_xlabel("Epoch", color="gray"); ax.set_ylabel("Accuracy (%)", color="gray")
     ax.tick_params(colors="gray"); ax.spines[:].set_color("#333")
     ax.legend(loc="lower right", fontsize=8, framealpha=0.3, labelcolor="white", facecolor="#111")
@@ -665,7 +665,7 @@ def make_plots(history, stress_results, deg_types, all_classes, gallery_data, po
     ax.hist(neg_sims_v4, bins=bins, alpha=0.7, color="#ff4444",
             label=f"Negatif (inter-indiv) n={len(neg_sims_v4)}", density=True)
     ax.axvline(gallery_data["unknown_threshold"], color="white",
-               linestyle="--", linewidth=1.5, label=f"Seuil={gallery_data['unknown_threshold']}")
+               linestyle="--", linewidth=1.5, label=f"Threshold={gallery_data['unknown_threshold']}")
     ax.set_title("Distributions similarite V4", color="white", fontsize=10)
     ax.tick_params(colors="gray"); ax.spines[:].set_color("#333")
     ax.legend(fontsize=7, framealpha=0.3, labelcolor="white", facecolor="#111")
@@ -686,7 +686,7 @@ def make_plots(history, stress_results, deg_types, all_classes, gallery_data, po
         ax.set_yticklabels(ys, fontsize=6, color="gray")
         ax.set_xlim(0.5, 1.05)
         ax.axvline(0.85, color="white", linestyle="--", alpha=0.5, linewidth=1)
-        ax.set_title("Coherence intra-individu (galerie V4)", color="white", fontsize=10)
+        ax.set_title("Within-individual coherence (V4 gallery)", color="white", fontsize=10)
         ax.tick_params(colors="gray"); ax.spines[:].set_color("#333")
 
     plt.suptitle("V4 Diagnostic complet", color="white",

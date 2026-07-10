@@ -1,11 +1,11 @@
 """
 V6_5_test_rejection.py — OrangIdentifier V6
 =============================================
-Teste la capacité du modèle V6 à REJETER des inconnus :
-  - BOS (30 individus de sanctuaire — réels orangs, mais non entraînés)
+Tests the ability of the V6 model to REJECT unknowns:
+  - BOS (30 sanctuary individuals, real orangutans, but not trained on)
   - Wild (5429 crops sauvages)
 
-Un bon modèle doit :
+A good model must:
   - Accepter  les individus zoo  (score ≥ seuil)
   - Rejeter   les BOS et wild    (score < seuil)
 
@@ -45,7 +45,7 @@ DEVICE   = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 IMG_SIZE = 224
 EXTS     = {".jpg",".jpeg",".png",".JPG",".JPEG",".PNG"}
 MEAN = STD = [0.5, 0.5, 0.5]
-WILD_SAMPLE = 1000   # nb wild à tester
+WILD_SAMPLE = 1000   # number of wild to test
 
 random.seed(42); np.random.seed(42)
 
@@ -64,7 +64,7 @@ class DS(Dataset):
 
 # ── Backbone ─────────────────────────────────────────────────────────────────
 print(f"Device : {DEVICE}")
-print("Chargement backbone V6...")
+print("Loading V6 backbone...")
 bb = timm.create_model("hf-hub:BVRA/MegaDescriptor-T-224", pretrained=False, num_classes=0)
 ck = torch.load(str(BACKBONE_PT), map_location="cpu", weights_only=False)
 state = ck.get("backbone_state") or ck
@@ -73,7 +73,7 @@ bb = bb.to(DEVICE).eval()
 print("  OK")
 
 # ── Galerie ───────────────────────────────────────────────────────────────────
-print("Chargement galerie V6...")
+print("Loading V6 gallery...")
 gal      = json.loads(GALLERY_JS.read_text(encoding="utf-8"))
 THRESHOLD = gal["unknown_threshold"]
 zoo_names = list(gal["individuals"].keys())
@@ -84,7 +84,7 @@ for name in zoo_names:
     ex = np.array(gal["individuals"][name]["exemplars"], dtype=np.float32)
     ex_list.append(ex)
 
-print(f"  {len(zoo_names)} individus, seuil={THRESHOLD:.4f}")
+print(f"  {len(zoo_names)} individuals, threshold={THRESHOLD:.4f}")
 
 @torch.no_grad()
 def embed(paths):
@@ -95,7 +95,7 @@ def embed(paths):
     return np.concatenate(out).astype(np.float32)
 
 def score_against_gallery(embs):
-    """Pour chaque embedding, retourne (best_score, best_class_idx)."""
+    """For each embedding, return (best_score, best_class_idx)."""
     n = len(embs)
     scores = np.full((n, len(zoo_names)), -1.0, dtype=np.float32)
     for ci, ex in enumerate(ex_list):
@@ -108,7 +108,7 @@ def score_against_gallery(embs):
 # TEST BOS
 # ══════════════════════════════════════════════════════════════════════════════
 print("\n" + "═"*65)
-print("  TEST BOS (individus sanctuaire — doivent être REJETÉS)")
+print("  BOS TEST (sanctuary individuals, must be REJECTED)")
 print("═"*65)
 
 bos_results = {}
@@ -142,7 +142,7 @@ for ind_dir in sorted(BOS_DIR.iterdir()):
         "fp_targets": fp_targets,
     }
     flag = " !" if fp_rate > 0.05 else ""
-    print(f"  {name:<14}: {len(paths):3d} crops | rejetés={100*(1-fp_rate):5.1f}%"
+    print(f"  {name:<14}: {len(paths):3d} crops | rejected={100*(1-fp_rate):5.1f}%"
           f" | score µ={best_score.mean():.3f} max={best_score.max():.3f}{flag}")
 
 bos_scores_arr = np.array(bos_all_scores)
@@ -162,7 +162,7 @@ for zn, cnt in top_conf:
 # TEST WILD
 # ══════════════════════════════════════════════════════════════════════════════
 print("\n" + "═"*65)
-print(f"  TEST WILD ({WILD_SAMPLE} crops sauvages — doivent être REJETÉS)")
+print(f"  WILD TEST ({WILD_SAMPLE} wild crops, must be REJECTED)")
 print("═"*65)
 
 wild_files  = sorted([f for f in WILD_DIR.iterdir() if f.suffix in EXTS])
@@ -176,8 +176,8 @@ wild_confusion = {name: 0 for name in zoo_names}
 for i in wild_class[wild_accepted]:
     wild_confusion[zoo_names[i]] += 1
 
-print(f"  {len(wild_sample)} crops testées")
-print(f"  FP rate   : {100*wild_fp_rate:.2f}%  ({wild_accepted.sum()} acceptées)")
+print(f"  {len(wild_sample)} crops tested")
+print(f"  FP rate   : {100*wild_fp_rate:.2f}%  ({wild_accepted.sum()} accepted)")
 print(f"  Score µ   : {wild_score.mean():.4f}  ± {wild_score.std():.4f}")
 print(f"  Score max : {wild_score.max():.4f}")
 print(f"  Score p95 : {np.percentile(wild_score, 95):.4f}")
@@ -342,17 +342,17 @@ print(f"  Figure 4 -> {out4.name}")
 print(f"\n{'═'*65}")
 print("  RÉSUMÉ REJET — V6")
 print(f"{'═'*65}")
-print(f"  Seuil galerie   : {THRESHOLD:.4f}")
+print(f"  Gallery threshold : {THRESHOLD:.4f}")
 print(f"  BOS FP global   : {100*bos_total_fp/bos_total_n:.2f}%  "
-      f"({bos_total_fp}/{bos_total_n} crops acceptées)")
+      f"({bos_total_fp}/{bos_total_n} crops accepted)")
 print(f"  Wild FP global  : {100*wild_fp_rate:.2f}%  "
-      f"({int(wild_accepted.sum())}/{len(wild_sample)} crops acceptées)")
+      f"({int(wild_accepted.sum())}/{len(wild_sample)} crops accepted)")
 print(f"  Score BOS µ/max : {bos_scores_arr.mean():.4f} / {bos_scores_arr.max():.4f}")
 print(f"  Score Wild µ/max: {wild_score.mean():.4f} / {wild_score.max():.4f}")
 
 worst_bos = sorted(bos_results.items(), key=lambda x: -x[1]["fp_rate"])[:3]
 if worst_bos[0][1]["fp_rate"] > 0:
-    print(f"\n  Individus BOS les plus difficiles à rejeter :")
+    print(f"\n  BOS individuals hardest to reject :")
     for n, r in worst_bos:
         if r["fp_rate"] > 0:
             print(f"    {n:<14}: {r['fp_rate']*100:.1f}% FP → confondu avec {r['fp_targets'][:3]}")

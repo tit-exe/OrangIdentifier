@@ -3,28 +3,28 @@ V6_field_sim.py — OrangIdentifier V6
 =======================================
 Simulation terrain "ajout d'un nouvel individu avec N photos".
 
-Protocole (réplique exacte du comportement de l'app) :
-  Pour chaque individu test (auto-sélectionnés : 1 facile, 1 moyen, 1 difficile) :
-    1. Charger la galerie V6 (gallery.json) et RETIRER l'individu test en mémoire
-       → galerie simulée = 14 autres individus (exemplars précomputes, pas de reforward)
+Protocol (exact replica of the app behaviour):
+  For each test individual (auto-selected: 1 easy, 1 medium, 1 hard):
+    1. Load the V6 gallery (gallery.json) and REMOVE the test individual in memory
+       -> simulated gallery = 14 other individuals (precomputed exemplars, no reforward)
     2. Collecter les crops de l'individu test sur disque, extraire les embeddings
     3. Split fixe 75% TRAIN (photos terrain) / 25% TEST (photos non vues)
-    4. Pour N = 1, 2, 3, 4, 5, 7, 10, 15, 20 — répéter K_MC=50 fois :
+    4. For N = 1, 2, 3, 4, 5, 7, 10, 15, 20, repeat K_MC=50 times:
          - Tirer N crops au hasard dans TRAIN
-         - prototype = L2_normalize( mean( embs[N tirés] ) )   ← identique à l'app
+         - prototype = L2_normalize( mean( embs[N drawn] ) )   <- identical to the app
          - Galerie_sim = {14 autres} ∪ {individu_test : [prototype]}
          - TP_score[N]   = mean cosine_sim(prototype, TEST crops de l'individu)
          - TP_rate[N]    = % TEST reconnus comme l'individu correct (top match ≥ seuil)
          - FP_rate[N]    = % crops wild reconnus comme QUELQU'UN dans Galerie_sim
     5. Figures :
          - grille 3×3 par individu (TP score, TP rate, FP rate)
-         - synthèse comparant les 3 individus
+         - synthesis comparing the 3 individuals
 
-Auto-sélection : 1 individu haute confiance, 1 médiane, 1 faible confiance
-  (d'après la similarité intra-classe des exemplars dans gallery.json)
+Auto-selection: 1 high-confidence individual, 1 median, 1 low-confidence
+  (based on the within-class similarity of the exemplars in gallery.json)
   → override : TEST_INDIVIDUALS = ["Auti", "Rosa", "Kembali"]
 
-Durée estimée : ~3-5 min CPU / ~30 s GPU (embeddings cachés après 1er run)
+Estimated time: ~3-5 min CPU / ~30 s GPU (embeddings cached after the first run)
 
 RUN :
     conda activate orangs
@@ -71,15 +71,15 @@ WILD_DIR  = (REPO / "data" / "crops" / "wild")
 RESULTS   = (REPO / "output" / "v6" / "results")
 CACHE_F   = RESULTS / "emb_cache_field_sim.npz"
 
-THRESHOLD = 0.5371      # seuil galerie V6
+THRESHOLD = 0.5371      # V6 gallery threshold
 
 SEED      = 42
-TEST_FRAC = 0.25        # fraction crops réservés pour le test
+TEST_FRAC = 0.25        # fraction of crops reserved for the test
 TEST_MIN  = 5           # minimum crops test
 TRAIN_MIN = 3           # minimum crops train pool
-MIN_CROPS = 12          # individus avec moins sont ignorés
+MIN_CROPS = 12          # individuals with fewer are skipped
 
-N_VALUES  = [1, 2, 3, 4, 5, 7, 10, 15, 20, 25]   # inclut 25 (demandé par Cédric)
+N_VALUES  = [1, 2, 3, 4, 5, 7, 10, 15, 20, 25]   # includes 25 (requested by Cedric)
 K_MC      = 50          # Monte Carlo repetitions (50 = good balance speed/variance)
 N_WILD    = 200         # max wild crops for FP analysis
 IMG_SIZE  = 224
@@ -107,11 +107,11 @@ ap.add_argument("--recache", action="store_true",
 args = ap.parse_args()
 
 # ══════════════════════════════════════════════════════════════
-# CHARGEMENT GALERIE (exemplars précomputes depuis gallery.json)
+# GALLERY LOADING (precomputed exemplars from gallery.json)
 # ══════════════════════════════════════════════════════════════
 def load_gallery():
     if not GALLERY.exists():
-        raise FileNotFoundError(f"gallery.json introuvable : {GALLERY}")
+        raise FileNotFoundError(f"gallery.json not found : {GALLERY}")
     with open(GALLERY, encoding="utf-8") as f:
         gal = json.load(f)
     exemplars = {}
@@ -119,7 +119,7 @@ def load_gallery():
         exs = data.get("exemplars", [])
         if exs:
             exemplars[name] = np.array(exs, dtype=np.float32)  # (K, 768)
-    print(f"Galerie chargée : {len(exemplars)} individus, threshold={THRESHOLD}")
+    print(f"Gallery loaded : {len(exemplars)} individuals, threshold={THRESHOLD}")
     return exemplars
 
 # ══════════════════════════════════════════════════════════════
@@ -141,8 +141,8 @@ class _PathDS(Dataset):
 
 def load_backbone():
     if not V6_BEST.exists():
-        raise FileNotFoundError(f"Checkpoint introuvable : {V6_BEST}")
-    print("Chargement backbone V6...")
+        raise FileNotFoundError(f"Checkpoint not found : {V6_BEST}")
+    print("Loading V6 backbone...")
     bb = timm.create_model("hf-hub:BVRA/MegaDescriptor-T-224", pretrained=False, num_classes=0)
     ck = torch.load(str(V6_BEST), map_location="cpu", weights_only=False)
     state = ck.get("backbone_state") or ck.get("model_state_dict") or ck
@@ -160,7 +160,7 @@ def embed(backbone, paths):
     return np.concatenate(out, 0).astype(np.float32)
 
 def collect_individual(name):
-    """Collecte tous les crops d'un individu depuis ZOO_DIR et NEW_ZOO."""
+    """Collects all crops of an individual from ZOO_DIR and NEW_ZOO."""
     paths = []
     for base in [ZOO_DIR, NEW_ZOO]:
         d = base / name
@@ -169,20 +169,20 @@ def collect_individual(name):
     return sorted(set(paths))
 
 def collect_wild():
-    """Collecte max N_WILD crops wild (individus inconnus)."""
+    """Collect up to N_WILD wild crops (unknown individuals)."""
     if not WILD_DIR.exists():
         return []
     all_w = sorted([f for f in WILD_DIR.rglob("*") if f.suffix in EXTS])
     return random.Random(SEED).sample(all_w, min(N_WILD, len(all_w)))
 
 # ══════════════════════════════════════════════════════════════
-# CACHE EMBEDDINGS (pour ne pas tout recalculer à chaque run)
+# EMBEDDINGS CACHE (to avoid recomputing everything on each run)
 # ══════════════════════════════════════════════════════════════
 def build_or_load_cache(all_gallery_names, recache=False):
     """
     Calcule les embeddings pour TOUS les individus de la galerie.
-    Nécessaire pour que l'auto-sélection repose sur la variété réelle des crops
-    (et non sur les exemplaires cherry-pickés de gallery.json).
+    Needed so that the auto-selection relies on the real variety of the crops
+    (and not on the cherry-picked exemplars of gallery.json).
     """
     RESULTS.mkdir(parents=True, exist_ok=True)
 
@@ -204,7 +204,7 @@ def build_or_load_cache(all_gallery_names, recache=False):
     for name in sorted(all_gallery_names):
         paths = collect_individual(name)
         if not paths:
-            print(f"  {name:<14}: IGNORÉ (aucun crop trouvé dans ZOO_DIR / NEW_ZOO)")
+            print(f"  {name:<14}: SKIPPED (no crop found in ZOO_DIR / NEW_ZOO)")
             continue
         zoo_embs[name] = embed(backbone, paths)
         print(f"  {name:<14}: {len(zoo_embs[name]):4d} embeddings")
@@ -217,7 +217,7 @@ def build_or_load_cache(all_gallery_names, recache=False):
     save["wild_embs"]          = wild_embs
     save["cached_individuals"] = np.array(sorted(zoo_embs.keys()))
     np.savez_compressed(CACHE_F, **save)
-    print(f"Cache sauvegardé : {CACHE_F}")
+    print(f"Cache saved : {CACHE_F}")
 
     return zoo_embs, wild_embs
 
@@ -226,19 +226,19 @@ def build_or_load_cache(all_gallery_names, recache=False):
 # ══════════════════════════════════════════════════════════════
 def auto_select(zoo_embs, n_select=5):
     """
-    Sélectionne n_select individus couvrant le spectre de difficulté.
-    Critère : variété réelle des crops terrain (similarité cosinus au centroïde).
-    Faible varieté = individu facile (ses photos se ressemblent).
-    Forte variété  = individu difficile (apparence variable, hard case).
+    Selects n_select individuals covering the difficulty spectrum.
+    Criterion: real variety of the field crops (cosine similarity to the centroid).
+    Low variety = easy individual (its photos look alike).
+    High variety = hard individual (variable appearance, hard case).
 
-    Différent de la self-sim des EXEMPLAIRES de gallery.json qui sont
-    cherry-pickés et donnent toujours une haute similarité.
+    Different from the self-sim of the EXEMPLARS in gallery.json, which are
+    cherry-picked and always give a high similarity.
     """
     variety = {}
     for name, embs in zoo_embs.items():
         centroid = embs.mean(0)
         centroid /= np.linalg.norm(centroid) + 1e-8
-        # Similarité moyenne des crops au centroïde (haute = peu varié = facile)
+        # Mean similarity of crops to the centroid (high = low variety = easy)
         variety[name] = float((embs @ centroid).mean())
 
     # Trier du plus facile (haute sim) au plus difficile (faible sim)
@@ -248,21 +248,21 @@ def auto_select(zoo_embs, n_select=5):
     if n_select >= n:
         chosen = ranked
     else:
-        # Échantillonner uniformément du plus facile au plus difficile
+        # Sample uniformly from easiest to hardest
         indices = np.round(np.linspace(0, n - 1, n_select)).astype(int)
         chosen  = [ranked[i] for i in indices]
 
-    print(f"  {'Individu':<14}  {'Sim au centroïde':>18}  {'Difficulté'}")
+    print(f"  {'Individual':<14}  {'Sim to centroid':>18}  {'Difficulty'}")
     print(f"  {'─'*45}")
     for name in ranked:
-        tag    = "<── sélectionné" if name in chosen else ""
+        tag    = "<- selected" if name in chosen else ""
         level  = "facile" if variety[name] > 0.85 else ("moyen" if variety[name] > 0.70 else "difficile")
         print(f"  {name:<14}  {variety[name]:>18.4f}  {level:<10}  {tag}")
 
     return chosen, variety
 
 # ══════════════════════════════════════════════════════════════
-# SPLIT TRAIN / TEST — déterministe, sans fuite
+# TRAIN / TEST SPLIT - deterministic, no leakage
 # ══════════════════════════════════════════════════════════════
 def make_split(n_total, seed):
     rng    = np.random.default_rng(seed)
@@ -274,7 +274,7 @@ def make_split(n_total, seed):
     return idx[n_test:], idx[:n_test]   # train, test
 
 # ══════════════════════════════════════════════════════════════
-# SCORING (logique identique à l'app)
+# SCORING (logic identical to the app)
 # ══════════════════════════════════════════════════════════════
 def score_against_gallery(query_embs, gallery_exemplars, proto_test=None, test_name=None):
     """
@@ -331,7 +331,7 @@ def simulate_individual(name, embs, gallery_exemplars, wild_embs, n_values, k_mc
         fp_rates_mc  = np.empty(k_mc)
 
         for k in range(k_mc):
-            # Construire le prototype (identique à l'app)
+            # Build the prototype (identical to the app)
             chosen = rng.choice(n_train, size=N, replace=replace)
             proto  = train_embs[chosen].mean(axis=0)
             proto /= np.linalg.norm(proto) + 1e-8
@@ -341,12 +341,12 @@ def simulate_individual(name, embs, gallery_exemplars, wild_embs, n_values, k_mc
             scores_vs_proto = np.array([r[2] for r in tp_res])
             tp_scores_mc[k] = float(scores_vs_proto.mean())
 
-            # TP correct = top match est l'individu ET score ≥ seuil
+            # Correct TP = top match is the individual AND score >= threshold
             tp_rates_mc[k] = float(np.mean(
                 [(r[0] == name and r[1] >= THRESHOLD) for r in tp_res]
             ))
 
-            # ── WILD CROPS (inconnus) ──
+            # -- WILD CROPS (unknown) --
             if len(wild_embs) > 0:
                 fp_res = score_against_gallery(wild_embs, gallery_without, proto, name)
                 fp_rates_mc[k] = float(np.mean([r[1] >= THRESHOLD for r in fp_res]))
@@ -375,7 +375,7 @@ def fig_main(all_results, n_values, out_path):
     - Faded lines per individual (shows honest spread).
     - Bold mean line + ±1 std band.
     - Key numbers annotated on the mean curve.
-    This is the graph to send to Cédric / Indonesian colleagues.
+    This is the graph to send to Cedric / Indonesian colleagues.
     """
     names   = sorted(all_results.keys())
     n_ind   = len(names)
@@ -506,7 +506,7 @@ def fig_per_individual(all_results, n_values, out_path):
 
 def fig_table(all_results, n_values, out_path):
     """
-    Summary table exactly matching Cédric's requested format:
+    Summary table exactly matching Cedric's requested format:
       Rows = N photos (1, 5, 10, 15, 20, 25)
       Cols = individual names + MEAN column
       Values = recognition rate %
@@ -615,14 +615,14 @@ if __name__ == "__main__":
     print(f"Device : {DEVICE}")
     print(f"Config : hold-out {int(TEST_FRAC*100)}%, Monte Carlo K={K_MC}, N_WILD={N_WILD}\n")
 
-    # 1. Charger galerie (exemplars précomputes, pas de reforward)
+    # 1. Load gallery (precomputed exemplars, no reforward)
     gallery_exemplars = load_gallery()
     all_gallery_names = list(gallery_exemplars.keys())
 
-    # 2. Embeddings pour TOUS les individus (nécessaire pour la vraie auto-sélection)
+    # 2. Embeddings for ALL individuals (needed for the real auto-selection)
     zoo_embs, wild_embs = build_or_load_cache(all_gallery_names, recache=args.recache)
 
-    # 3. Sélectionner les individus à simuler
+    # 3. Select the individuals to simulate
     if TEST_INDIVIDUALS:
         test_names = list(TEST_INDIVIDUALS)
         for n in test_names:
@@ -679,7 +679,7 @@ if __name__ == "__main__":
     fig_table(all_results, N_VALUES,
               RESULTS / "04_recognition_table.png")
 
-    # 6. Résumé
+    # 6. Summary
     print_summary(all_results)
     elapsed = time.time() - t0
     print(f"Total time: {elapsed/60:.1f} min")

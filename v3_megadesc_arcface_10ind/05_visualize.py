@@ -312,7 +312,7 @@ for i, cls in enumerate(classes):
                 ha="center", va="center",
                 bbox=dict(boxstyle="round,pad=0.2", facecolor=zoo_colors[i], alpha=0.7))
 
-ax.set_title("Espace d'embedding 2D - TOUS les individus",
+ax.set_title("2D embedding space - ALL individuals",
              color="white", fontsize=13, pad=12)
 ax.tick_params(colors="gray")
 ax.spines[:].set_color("#333")
@@ -341,7 +341,7 @@ for i, cls in enumerate(classes):
 ax2.scatter(bos_x[:50], bos_y[:50], c="cyan", alpha=0.4, s=30, marker="^",
             label="BOS samples", zorder=2)
 
-ax2.set_title("Zoom sur les 10 individus connus\n(étoiles = prototypes, triangles = BOS inconnus)",
+ax2.set_title("Zoom on the 10 known individuals\n(stars = prototypes, triangles = unknown BOS)",
               color="white", fontsize=11, pad=12)
 ax2.tick_params(colors="gray")
 ax2.spines[:].set_color("#333")
@@ -389,7 +389,7 @@ wild_vs_zoo  = (wild_embs @ proto_matrix.T).max(dim=1).values.tolist()
 
 fig, axes = plt.subplots(2, 2, figsize=(16, 10))
 fig.patch.set_facecolor("#0f0f0f")
-fig.suptitle("Distributions de similarité cosinus", color="white",
+fig.suptitle("Cosine similarity distributions", color="white",
              fontsize=15, fontweight="bold", y=1.01)
 
 bins = np.linspace(-0.2, 1.0, 60)
@@ -410,13 +410,13 @@ def hist_ax(ax, data_dict, title_text, threshold=None):
                        facecolor="#111")
 
 hist_ax(axes[0,0], {
-    "Même individu (positif)": pos_sims,
-    "Individus différents (négatif)": neg_sims,
-}, "Séparabilité des 10 individus connus\n(plus le gap est grand, mieux c'est)", threshold=THRESHOLD)
+    "Same individual (positive)": pos_sims,
+    "Different individuals (negative)": neg_sims,
+}, "Separability of the 10 known individuals\n(the larger the gap, the better)", threshold=THRESHOLD)
 
 hist_ax(axes[0,1], {
     "BOS unknowns vs zoo": bos_vs_zoo,
-    "Même individu (ref)": pos_sims[:500],
+    "Same individual (ref)": pos_sims[:500],
 }, "BOS unknowns vs zoo prototypes\n(should be < threshold)", threshold=THRESHOLD)
 
 hist_ax(axes[1,0], {
@@ -447,7 +447,7 @@ bars  = ax.bar(x_pos, sep_values, color=zoo_colors[:len(classes)],
                alpha=0.8, edgecolor="white", linewidth=0.5)
 ax.set_xticks(x_pos)
 ax.set_xticklabels(classes_sorted, rotation=35, ha="right", color="gray", fontsize=8)
-ax.set_title("Gap de séparabilité par individu\n(pos_sim - neg_sim, plus haut = mieux)", 
+ax.set_title("Separability gap per individual\n(pos_sim - neg_sim, higher = better)", 
              color="white", fontsize=11, pad=8)
 ax.tick_params(colors="gray")
 ax.spines[:].set_color("#333")
@@ -541,7 +541,7 @@ for row_i, (row_label, data, row_type) in enumerate(rows_data):
 
 plt.suptitle(
     "Sample crops — green/red = below/above threshold\n"
-    "Zoo: sim avec le vrai individu | BOS/Wild: sim max avec n'importe quel zoo connu",
+    "Zoo: sim with the true individual | BOS/Wild: max sim with any known zoo",
     color="white", fontsize=11, y=1.01
 )
 
@@ -572,14 +572,14 @@ ax.set_facecolor("#0f0f0f")
 im = ax.imshow(conf_matrix, cmap="RdYlGn", vmin=-0.1, vmax=1.0, aspect="auto")
 cbar = plt.colorbar(im, ax=ax)
 cbar.ax.tick_params(colors="white")
-cbar.set_label("Similarité cosinus", color="white")
+cbar.set_label("Cosine similarity", color="white")
 
 ax.set_xticks(range(n_cls))
 ax.set_yticks(range(n_cls))
 ax.set_xticklabels(classes, rotation=40, ha="right", color="white", fontsize=9)
 ax.set_yticklabels(classes, color="white", fontsize=9)
 ax.set_xlabel("Prototype le plus proche", color="white", fontsize=10)
-ax.set_ylabel("Individu réel (crops moyennés)", color="white", fontsize=10)
+ax.set_ylabel("True individual (averaged crops)", color="white", fontsize=10)
 
 for i in range(n_cls):
     for j in range(n_cls):
@@ -590,9 +590,9 @@ for i in range(n_cls):
                 fontweight="bold" if i == j else "normal")
 
 ax.set_title(
-    "Matrice de confusion — similarité cosinus\n"
-    "Diagonale = individu reconnu lui-même (doit être haute)\n"
-    "Hors diagonale = confusion entre individus (doit être basse)",
+    "Confusion matrix - cosine similarity\n"
+    "Diagonal = individual recognised as itself (should be high)\n"
+    "Off-diagonal = confusion between individuals (should be low)",
     color="white", fontsize=11, pad=12
 )
 
@@ -630,12 +630,12 @@ for i in range(len(bins)-1):
 
 bw = bins[1] - bins[0]
 ax.bar(bins[:-1], hist_below, width=bw, color="#00ff88", alpha=0.8,
-       label=f"Rejeté ({n_rejected} crops)", align="edge")
+       label=f"Rejected ({n_rejected} crops)", align="edge")
 ax.bar(bins[:-1], hist_above, width=bw, color="#ff4444", alpha=0.8,
        label=f"Faux positif ({n_total-n_rejected} crops)", align="edge")
 ax.axvline(THRESHOLD, color="white", linewidth=2, linestyle="--",
-           label=f"Seuil={THRESHOLD}")
-ax.set_title("Wild crops: distribution de similarité\n avec individus zoo",
+           label=f"Threshold={THRESHOLD}")
+ax.set_title("Wild crops: similarity distribution\n with zoo individuals",
              color="white", fontsize=11)
 ax.tick_params(colors="gray")
 ax.spines[:].set_color("#333")
@@ -643,7 +643,7 @@ ax.set_xlabel("Max similarity avec zoo", color="gray")
 ax.legend(fontsize=8, framealpha=0.3, labelcolor="white", facecolor="#111")
 
 pct = 100 * n_rejected / n_total
-ax.text(0.05, 0.95, f"{pct:.1f}% rejetés correctement",
+ax.text(0.05, 0.95, f"{pct:.1f}% correctly rejected",
         transform=ax.transAxes, color="white", fontsize=11,
         fontweight="bold", va="top")
 
@@ -708,10 +708,10 @@ if false_pos_paths:
     ax.set_title(f"Wild crops above threshold (worst cases)\n= false positives to investiguer",
                  color="white", fontsize=11)
 else:
-    ax.text(0.5, 0.5, "Aucun false positif!\nTous les wild crops\nsont rejetés.",
+    ax.text(0.5, 0.5, "No false positive!\nAll wild crops\nare rejected.",
             ha="center", va="center", color="#00ff88", fontsize=14,
             fontweight="bold", transform=ax.transAxes)
-    ax.set_title("Wild crops: aucun false positif!", color="white", fontsize=11)
+    ax.set_title("Wild crops: no false positive!", color="white", fontsize=11)
 
 plt.tight_layout()
 out = OUT_DIR / "5_wild_crops_analysis.png"

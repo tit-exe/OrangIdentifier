@@ -1,30 +1,30 @@
 """
 01_train.py — OrangIdentifier V5
 =============================================
-Départ : V3 (meilleure base — séparabilité 0.96, ROC 0.998)
+Start: V3 (best base, separability 0.96, ROC 0.998)
 
-Innovations vs tous les scripts précédents :
-  [1] L_invariance : force le modèle à produire des embeddings
-      stables sous dégradation (fix direct du bug screenshot 97%→0%)
-      → chaque image passe en double (propre + dégradée), les deux
-        embeddings sont poussés à être similaires
-  [2] L_bos_spread : pousse les individus BOS à s'éloigner les uns
-      des autres dans l'espace d'embedding
-      → adresse directement la figure 1 (bloc BOS rouge uniforme)
-  [3] 4 phases avec curriculum dégradation progressif
-      → severity 0.0→0.4→0.7→1.0 selon la phase
-  [4] Sauvegarde checkpoint après CHAQUE epoch, inconditionnellement
-      → fermer la fenêtre = relancer = ça reprend exactement où ça s'est arrêté
-  [5] Handler Win32 CTRL_CLOSE_EVENT pour fermeture fenêtre terminal
-  [6] Galerie full-exemplaires filtrés par qualité (pas de prototype moyen)
-  [7] Stats live rich : losses, val, GPU, ETA batch, ETA total
+Innovations vs all previous scripts:
+  [1] L_invariance: forces the model to produce embeddings
+      stable under degradation (direct fix of the screenshot 97%->0% bug)
+      -> each image is passed twice (clean + degraded), and the two
+        embeddings are pushed to be similar
+  [2] L_bos_spread: pushes the BOS individuals away from one
+      another in the embedding space
+      -> directly addresses figure 1 (uniform red BOS block)
+  [3] 4 phases with a progressive degradation curriculum
+      -> severity 0.0->0.4->0.7->1.0 depending on the phase
+  [4] Saves a checkpoint after EACH epoch, unconditionally
+      -> closing the window = relaunch = resumes exactly where it stopped
+  [5] Win32 CTRL_CLOSE_EVENT handler for terminal window closing
+  [6] Full-exemplar gallery, quality-filtered (no mean prototype)
+  [7] Rich live stats: losses, val, GPU, batch ETA, total ETA
 
 CRASH-SAFETY
-  Peu importe comment le process s'arrête (fermeture fenêtre, crash, coupure
-  courant), le script sauvegarde v5_resume.pt à la fin de chaque epoch.
-  Relancer = reprise automatique depuis la dernière epoch complète.
+  No matter how the process stops (window close, crash, power
+  loss), the script saves v5_resume.pt at the end of each epoch.
+  Relaunching = automatic resume from the last complete epoch.
 
-CHEMINS
+PATHS
   Starting brain    : models/megadesc_T_arcface_final_epoch21_acc99.pt (V3)
   Outputs           : output/v5/
 
@@ -37,7 +37,7 @@ RUN
   python v5_megadesc_arcface_invariance/01_train.py --dry-run
 """
 
-# ── Cache avant tout import HuggingFace/torch ─────────────────────────────────
+# ── Cache before any HuggingFace/torch import ─────────────────────────────────
 import os
 os.environ["HF_HOME"]              = r"D:\HuggingFaceCache"
 os.environ["TORCH_HOME"]           = r"D:\TorchCache"
@@ -85,7 +85,7 @@ ARGS   = parser.parse_args()
 DRY    = ARGS.dry_run
 
 # ══════════════════════════════════════════════════════════════════════════════
-# CHEMINS
+# PATHS
 # ══════════════════════════════════════════════════════════════════════════════
 # Portable paths: everything is relative to the repository root.
 REPO      = Path(__file__).resolve().parents[1]
@@ -118,19 +118,19 @@ MEAN = STD = [0.5, 0.5, 0.5]
 EXTS       = {".jpg",".jpeg",".png",".JPG",".JPEG",".PNG"}
 
 ARC_SCALE  = 64
-ARC_MARGIN = 0.35      # réduit vs 0.50 — plus stable avec peu de données BOS
-K_ZOO      = 2         # sous-centres par individu zoo
+ARC_MARGIN = 0.35      # reduced vs 0.50, more stable with little BOS data
+K_ZOO      = 2         # sub-centers per zoo individual
 K_BOS      = 1         # 1 seul : BOS a trop peu de crops pour en justifier plus
 K_WILD     = 5
 
 # Galerie
 K_EXEMPLARS_ZOO = 20
 K_EXEMPLARS_BOS = 15
-QUALITY_ZOO     = 0.60   # seuil sim vs centroïde pour garder un crop
+QUALITY_ZOO     = 0.60   # sim threshold vs centroid to keep a crop
 QUALITY_BOS     = 0.50
 
 VAL_RATIO  = 0.15
-WILD_HARD_MINING_FROM_PHASE = 2   # mining démo. actif seulement à partir de la phase 2
+WILD_HARD_MINING_FROM_PHASE = 2   # demo mining, active only from phase 2 on
 
 random.seed(SEED); np.random.seed(SEED); torch.manual_seed(SEED)
 if torch.cuda.is_available(): torch.cuda.manual_seed_all(SEED)
@@ -173,10 +173,10 @@ def section(t):
     log(""); log(bar); log(f"  {t}"); log(bar)
 
 # ══════════════════════════════════════════════════════════════════════════════
-# CRASH SAFETY — fermeture fenêtre + Ctrl+C
+# CRASH SAFETY - window close + Ctrl+C
 # ══════════════════════════════════════════════════════════════════════════════
 _interrupt   = False
-_save_fn     = None   # sera défini dans main()
+_save_fn     = None   # will be defined in main()
 
 def _emergency_save():
     if _save_fn is not None:
@@ -188,7 +188,7 @@ def _emergency_save():
 def _sigint(sig, frame):
     global _interrupt
     if not _interrupt:
-        log("\n  [Ctrl+C] Arrêt propre après le batch courant...", "WARN")
+        log("\n  [Ctrl+C] Clean stop after the current batch...", "WARN")
         _interrupt = True
     else:
         _emergency_save()
@@ -202,15 +202,15 @@ try:
     def _win32_handler(ctrl_type):
         # CTRL_C=0 CTRL_BREAK=1 CTRL_CLOSE=2 LOGOFF=5 SHUTDOWN=6
         if ctrl_type in (2, 5, 6):
-            log(f"  [Win32 CTRL_CLOSE={ctrl_type}] Fenêtre fermée — sauvegarde urgence...", "WARN")
+            log(f"  [Win32 CTRL_CLOSE={ctrl_type}] Window closed, emergency save...", "WARN")
             global _interrupt; _interrupt = True
             _emergency_save()
-            time.sleep(1)    # laisser le temps à la sauvegarde
-        return False         # False = laisser le handler par défaut agir aussi
+            time.sleep(1)    # give the save some time
+        return False         # False = also let the default handler act
     win32api.SetConsoleCtrlHandler(_win32_handler, True)
-    log("  Handler Win32 CTRL_CLOSE installé — fermeture fenêtre = sauvegarde auto")
+    log("  Win32 CTRL_CLOSE handler installed - window close = automatic save")
 except ImportError:
-    log("  pywin32 absent — sauvegarde par epoch uniquement (pip install pywin32)", "WARN")
+    log("  pywin32 missing, per-epoch save only (pip install pywin32)", "WARN")
 
 # ══════════════════════════════════════════════════════════════════════════════
 # SUB-CENTER ARCFACE
@@ -251,9 +251,9 @@ class SubCenterArcFace(nn.Module):
 # LOSSES AUXILIAIRES
 # ══════════════════════════════════════════════════════════════════════════════
 def loss_invariance(emb_clean, emb_deg):
-    """Force same individual clean/dégradé → embedding similaire.
-    Fix direct du bug screenshot : Sinta_propre et Sinta_screenshot
-    produiront des embeddings proches."""
+    """Force the same individual clean/degraded -> similar embedding.
+    Direct fix of the screenshot bug: Sinta_clean and Sinta_screenshot
+    will produce close embeddings."""
     return 1.0 - (emb_clean * emb_deg).sum(dim=1).mean()
 
 def loss_bos_spread(emb, labels, n_zoo, n_known):
@@ -268,7 +268,7 @@ def loss_bos_spread(emb, labels, n_zoo, n_known):
     diff = (bl.unsqueeze(0) != bl.unsqueeze(1))
     if not diff.any():
         return torch.tensor(0.0, device=emb.device)
-    return sim[diff].mean()   # minimiser = repousser les BOS différents
+    return sim[diff].mean()   # minimising = push apart the different BOS
 
 # ══════════════════════════════════════════════════════════════════════════════
 # AUGMENTATIONS — 3 niveaux
@@ -290,7 +290,7 @@ class _JPEG:
         buf.seek(0); return Image.open(buf).copy()
 
 class _CropJitter:
-    """Décalage ±px avec padding reflect — simule variabilité YOLO bbox."""
+    """Shift by +/-px with reflect padding, simulates YOLO bbox variability."""
     def __init__(self, px=2): self.px=px
     def __call__(self, tensor):
         pad = T.functional.pad(tensor, self.px, padding_mode="reflect")
@@ -309,7 +309,7 @@ def get_clean_tf():
     ])
 
 def get_degraded_tf(severity: float):
-    """severity ∈ [0,1] — curriculum : 0.4 → 0.7 → 1.0 selon la phase."""
+    """severity in [0,1], curriculum: 0.4 -> 0.7 -> 1.0 depending on the phase."""
     s = severity
     return T.Compose([
         T.RandomResizedCrop(IMG_SIZE, scale=(max(0.50, 0.75-0.25*s), 1.0)),
@@ -369,13 +369,13 @@ class WildDataset(Dataset):
     def __getitem__(self, idx):
         try:    img = Image.open(self.files[idx]).convert("RGB")
         except: img = Image.new("RGB",(IMG_SIZE,IMG_SIZE),(100,80,60))
-        # wild reçoit seulement la version dégradée (plus de diversité)
+        # wild gets only the degraded version (more diversity)
         deg = get_degraded_tf(1.0)(img)
         cln = get_clean_tf()(img)
         return cln, deg, self.lbl
 
 # ══════════════════════════════════════════════════════════════════════════════
-# CHARGEMENT DES DONNÉES
+# LOADING DATA
 # ══════════════════════════════════════════════════════════════════════════════
 def load_dir(base, offset=0, exclude=None):
     excl  = set(exclude or [])
@@ -426,10 +426,10 @@ def load_backbone():
             if isinstance(ckpt,dict) and k in ckpt: state=ckpt[k]; break
         if state is None and isinstance(ckpt,dict): state=ckpt
         miss,unex = bb.load_state_dict(state, strict=False)
-        log(f"  V3 chargé — {len(miss)} manquantes, {len(unex)} inattendues")
+        log(f"  V3 loaded - {len(miss)} missing, {len(unex)} unexpected")
         src = "V3"
     else:
-        log("  V3 introuvable — poids HuggingFace bruts", "WARN")
+        log("  V3 not found, raw HuggingFace weights", "WARN")
         bb  = timm.create_model("hf-hub:BVRA/MegaDescriptor-T-224", pretrained=True, num_classes=0)
         src = "HuggingFace"
     with torch.no_grad():
@@ -438,7 +438,7 @@ def load_backbone():
     return bb, emb_dim, src
 
 # ══════════════════════════════════════════════════════════════════════════════
-# ENTRAÎNEMENT UN EPOCH
+# TRAIN ONE EPOCH
 # ══════════════════════════════════════════════════════════════════════════════
 def train_epoch(bb, arc, loaders, opt, sched, phase_cfg, n_zoo, n_known, live_state, refresh_fn=None):
     bb.train(); arc.train()
@@ -503,9 +503,9 @@ def train_epoch(bb, arc, loaders, opt, sched, phase_cfg, n_zoo, n_known, live_st
 def validate(bb, zoo_tr_p, zoo_tr_l, zoo_va_p, zoo_va_l, n_zoo, emb_dim):
     bb.eval()
     val_tf = get_val_tf()
-    deg_tf = get_degraded_tf(0.70)  # dégradation modérée fixe pour validation
+    deg_tf = get_degraded_tf(0.70)  # fixed moderate degradation for validation
 
-    # Prototypes depuis les crops d'entraînement
+    # Prototypes from the training crops
     proto = torch.zeros(n_zoo, emb_dim)
     cnt   = torch.zeros(n_zoo)
     tr_dl = DataLoader(PlainDataset(zoo_tr_p, zoo_tr_l), 64, num_workers=0)
@@ -516,7 +516,7 @@ def validate(bb, zoo_tr_p, zoo_tr_l, zoo_va_p, zoo_va_l, n_zoo, emb_dim):
     for c in range(n_zoo):
         if cnt[c]>0: proto[c] = F.normalize(proto[c], dim=0)
 
-    # Accuracy propre
+    # Clean accuracy
     va_dl  = DataLoader(PlainDataset(zoo_va_p, zoo_va_l), 64, num_workers=0)
     ok, tot = 0, 0
     for imgs, lbs in va_dl:
@@ -525,7 +525,7 @@ def validate(bb, zoo_tr_p, zoo_tr_l, zoo_va_p, zoo_va_l, n_zoo, emb_dim):
         ok  += (pred==lbs).sum().item(); tot += lbs.size(0)
     acc_clean = ok / max(tot,1)
 
-    # Accuracy dégradée — même val set avec dégradation
+    # Degraded accuracy - same val set with degradation
     va_deg = DataLoader(PlainDataset(zoo_va_p, zoo_va_l, deg_tf), 64, num_workers=0)
     ok, tot = 0, 0
     for imgs, lbs in va_deg:
@@ -538,7 +538,7 @@ def validate(bb, zoo_tr_p, zoo_tr_l, zoo_va_p, zoo_va_l, n_zoo, emb_dim):
 
 @torch.no_grad()
 def bos_discrimination(bb, bos_p, bos_l, n_zoo):
-    """Écart moyen intra-BOS moins inter-BOS — > 0 = le modèle discrimine."""
+    """Mean intra-BOS minus inter-BOS gap, > 0 = the model discriminates."""
     if not bos_p: return 0.0
     bb.eval()
     ds = PlainDataset(bos_p, bos_l)
@@ -603,8 +603,8 @@ def save_best(bb, arc, classes, emb_dim, ep, val, src):
 # ══════════════════════════════════════════════════════════════════════════════
 @torch.no_grad()
 def compute_wild_weights(bb, all_wild_files, proto_matrix):
-    """Sample 512 wilds aléatoires, calcule leur sim max vs individus connus,
-    retourne weights pour le WildDataset (plus difficile = plus souvent tiré)."""
+    """Sample 512 random wilds, compute their max sim vs known individuals,
+    return weights for the WildDataset (harder = drawn more often)."""
     if len(all_wild_files) < 512: return None
     sample = random.sample(all_wild_files, 512)
     ds = PlainDataset(sample, [0]*512)
@@ -616,7 +616,7 @@ def compute_wild_weights(bb, all_wild_files, proto_matrix):
     embs = np.concatenate(embs)
     max_sims = (embs @ proto_matrix.T).max(1)
     w = np.exp(max_sims / 0.3); w /= w.sum()
-    # Retourne un poids pour TOUS les fichiers wilds (les 512 ont un poids, le reste ~0)
+    # Returns a weight for ALL wild files (the 512 have a weight, the rest ~0)
     full_weights = np.zeros(len(all_wild_files))
     wild_names   = {str(f): i for i, f in enumerate(all_wild_files)}
     for j, p in enumerate(sample):
@@ -656,14 +656,14 @@ def build_gallery(bb, all_paths, all_labels, all_names, n_zoo, emb_dim):
         centroid = ei.mean(0); centroid /= (np.linalg.norm(centroid)+1e-8)
         proto_matrix[i] = centroid
 
-        # Filtre qualité
+        # Quality filter
         sims    = ei @ centroid
         q       = QUALITY_ZOO if i < n_zoo else QUALITY_BOS
         k_max   = K_EXEMPLARS_ZOO if i < n_zoo else K_EXEMPLARS_BOS
         good    = ei[sims >= q]
         if len(good) < 3: good = ei[np.argsort(-sims)[:max(3,k_max//2)]]
 
-        # Top-k par similarité au centroïde
+        # Top-k by similarity to the centroid
         gs    = good @ centroid
         top_k = min(k_max, len(good))
         best  = good[np.argsort(-gs)[:top_k]]
@@ -681,18 +681,18 @@ def build_gallery(bb, all_paths, all_labels, all_names, n_zoo, emb_dim):
             "class_index": i, "is_zoo": (i < n_zoo),
             "num_crops": int(len(ei)), "num_exemplars": len(best),
             "mean_intra": round(float(np.mean(own_sims)),4),
-            "prototype": centroid.tolist(),   # rétrocompat app actuelle
-            "exemplars": best.tolist(),        # nouvelle inférence max-sim
+            "prototype": centroid.tolist(),   # backward compat with the current app
+            "exemplars": best.tolist(),        # new max-sim inference
         }
         log(f"  {name:<14}: {len(ei):3d} crops → {len(best):2d} exemplaires")
 
     pos = np.array(pos_sims); neg = np.array(neg_sims) if neg_sims else np.zeros(1)
     gap = float(pos.mean()-neg.mean())
     log(f"\n  Positive : {pos.mean():.4f} ± {pos.std():.4f}")
-    log(f"  Négative : {neg.mean():.4f} ± {neg.std():.4f}")
+    log(f"  Negative : {neg.mean():.4f} +/- {neg.std():.4f}")
     log(f"  Gap      : {gap:.4f}")
 
-    # Seuil global
+    # Global threshold
     thresholds = np.linspace(0,1,500)
     f1s = []
     for t in thresholds:
@@ -700,7 +700,7 @@ def build_gallery(bb, all_paths, all_labels, all_names, n_zoo, emb_dim):
         p=tp/(tp+fp+1e-9); r=tp/(tp+fn+1e-9)
         f1s.append(2*p*r/(p+r+1e-9))
     opt_t = float(thresholds[np.argmax(f1s)])
-    log(f"  Seuil optimal : {opt_t:.4f}  (F1={max(f1s):.4f})")
+    log(f"  Optimal threshold : {opt_t:.4f}  (F1={max(f1s):.4f})")
 
     gallery = {
         "version": "5-final", "created": datetime.now().isoformat(),
@@ -714,7 +714,7 @@ def build_gallery(bb, all_paths, all_labels, all_names, n_zoo, emb_dim):
         "individuals": individuals,
     }
     GALLERY_JS.write_text(json.dumps(gallery, separators=(",",":"), ensure_ascii=False))
-    log(f"  Galerie sauvegardée : {GALLERY_JS.name} ({GALLERY_JS.stat().st_size/1024:.0f} KB)")
+    log(f"  Gallery saved : {GALLERY_JS.name} ({GALLERY_JS.stat().st_size/1024:.0f} KB)")
     return opt_t, gap, proto_matrix
 
 # ══════════════════════════════════════════════════════════════════════════════
@@ -732,8 +732,8 @@ def make_rich_table(state, phase_cfg, global_ep, best_ep, best_score):
     t.add_row("L_inv    ", f"{state.get('l_inv',0):.4f}  (λ={phase_cfg['lam_inv']:.2f})")
     t.add_row("L_bos    ", f"{state.get('l_bos',0):.4f}  (λ={phase_cfg['lam_bos']:.2f})")
     t.add_row("─"*20, "─"*30)
-    t.add_row("Zoo acc (propre)", f"{state.get('acc_c',0)*100:.2f}%")
-    t.add_row("Zoo acc (dégradé)", f"{state.get('acc_d',0)*100:.2f}%")
+    t.add_row("Zoo acc (clean)", f"{state.get('acc_c',0)*100:.2f}%")
+    t.add_row("Zoo acc (degraded)", f"{state.get('acc_d',0)*100:.2f}%")
     t.add_row("BOS discrim", f"{state.get('bos_disc',0):.4f}")
     t.add_row("Score composite", f"{state.get('composite',0):.4f}"
               + (" * BEST" if state.get("is_best") else ""))
@@ -755,13 +755,13 @@ def make_rich_table(state, phase_cfg, global_ep, best_ep, best_score):
 # ══════════════════════════════════════════════════════════════════════════════
 def make_plots(history):
     fig, axes = plt.subplots(2, 2, figsize=(14, 10))
-    fig.suptitle("V5 — Courbes d'entraînement", fontsize=13)
+    fig.suptitle("V5 - Training curves", fontsize=13)
     axes[0,0].plot(history["l_arc"], color="#e74c3c", label="L_arcface")
     axes[0,0].set_title("Loss ArcFace"); axes[0,0].grid(0.3); axes[0,0].legend()
     axes[0,1].plot(history["l_inv"], color="#3498db", label="L_invariance")
     axes[0,1].set_title("Loss Invariance"); axes[0,1].grid(0.3); axes[0,1].legend()
-    axes[1,0].plot([v*100 for v in history["acc_clean"]], color="#2ecc71", label="Zoo propre")
-    axes[1,0].plot([v*100 for v in history["acc_deg"]],   color="#f39c12", label="Zoo dégradé")
+    axes[1,0].plot([v*100 for v in history["acc_clean"]], color="#2ecc71", label="Zoo clean")
+    axes[1,0].plot([v*100 for v in history["acc_deg"]],   color="#f39c12", label="Zoo degraded")
     axes[1,0].set_title("Accuracy validation"); axes[1,0].grid(0.3)
     axes[1,0].set_ylabel("%"); axes[1,0].legend()
     axes[1,1].plot(history["bos_disc"], color="#9b59b6", label="BOS discrimination")
@@ -773,12 +773,12 @@ def make_plots(history):
 # ══════════════════════════════════════════════════════════════════════════════
 def main():
     t_start = time.time()
-    section(f"V5 {'[DRY RUN] ' if DRY else ''}— démarrage {datetime.now():%Y-%m-%d %H:%M}")
+    section(f"V5 {'[DRY RUN] ' if DRY else ''}- start {datetime.now():%Y-%m-%d %H:%M}")
     log(f"  Device : {DEVICE}")
     log(f"  Sorties: {OUT}")
 
-    # ── Données ───────────────────────────────────────────────────────────────
-    section("Chargement des données")
+    # ── Data ───────────────────────────────────────────────────────────────
+    section("Loading data")
     zoo_p, zoo_l_local, zoo_names = load_dir(ZOO_DIR, exclude=["_a_verifier"])
     n_zoo = len(zoo_names)
     log(f"  Zoo : {n_zoo} individus, {len(zoo_p):,} crops")
@@ -789,7 +789,7 @@ def main():
     all_names  = zoo_names + bos_names
     n_known    = len(all_names)
     unknown_l  = n_known
-    bos_l_flat = bos_l_local   # déjà offset
+    bos_l_flat = bos_l_local   # already offset
 
     from sklearn.model_selection import train_test_split
     idx = list(range(len(zoo_p)))
@@ -813,9 +813,9 @@ def main():
     arc_loss    = SubCenterArcFace(emb_dim, n_known+1, k_per_class,
                                    ARC_SCALE, ARC_MARGIN).to(DEVICE)
     log(f"  ArcFace : {n_known} connus + 1 wild = {n_known+1} classes")
-    log(f"  Sous-centres : zoo×{K_ZOO} + BOS×{K_BOS} + wild×{K_WILD}")
+    log(f"  Sub-centers : zoo×{K_ZOO} + BOS×{K_BOS} + wild×{K_WILD}")
 
-    # ── Reprise ───────────────────────────────────────────────────────────────
+    # -- Resume ───────────────────────────────────────────────────────────────
     start_phase  = 0
     start_ep_in  = 0
     global_ep    = 0
@@ -824,7 +824,7 @@ def main():
     history      = {"l_arc":[],"l_inv":[],"l_bos":[],"acc_clean":[],"acc_deg":[],"bos_disc":[],"composite":[]}
 
     if RESUME_PT.exists():
-        section("Reprise depuis checkpoint")
+        section("Resume from checkpoint")
         ck = torch.load(str(RESUME_PT), map_location=DEVICE, weights_only=False)
         backbone.load_state_dict(ck["backbone_state"])
         arc_loss.load_state_dict(ck["arc_loss_state"])
@@ -834,29 +834,29 @@ def main():
         best_val    = ck["best_val"]
         best_ep     = ck["best_ep"]
         history     = ck.get("history", history)
-        log(f"  Reprise phase {start_phase}, epoch {start_ep_in}, "
-            f"meilleur score={best_val:.4f}")
-        # Si ep_in_phase dépasse les epochs de la phase → passer à la suivante
+        log(f"  Resume phase {start_phase}, epoch {start_ep_in}, "
+            f"best score={best_val:.4f}")
+        # If ep_in_phase exceeds the phase epochs -> move to the next
         if start_ep_in >= PHASES[start_phase]["epochs"]:
             start_phase += 1; start_ep_in = 0
             if start_phase >= len(PHASES):
-                log("  Toutes les phases terminées — passage direct à la galerie")
+                log("  All phases finished - go straight to the gallery")
                 backbone.load_state_dict(
                     torch.load(str(BEST_PT), map_location=DEVICE, weights_only=False)["backbone_state"])
                 build_gallery(backbone, all_known_p, all_known_l, all_names, n_zoo, emb_dim)
                 make_plots(history)
                 return
 
-    # ── Enregistrement de la fonction de sauvegarde d'urgence ─────────────────
+    # -- Register the emergency save function ─────────────────
     _cur = {"bb": backbone, "arc": arc_loss, "opt": None, "sched": None,
             "phase": start_phase, "ep_in": start_ep_in, "global": global_ep}
 
     def _emergency(reason="interrupt"):
-        log(f"  [SAVE-URGENCE] raison={reason} phase={_cur['phase']} ep={_cur['ep_in']}", "WARN")
+        log(f"  [EMERGENCY-SAVE] reason={reason} phase={_cur['phase']} ep={_cur['ep_in']}", "WARN")
         save_resume(_cur["bb"], _cur["arc"], _cur["opt"] or _mk_opt(PHASES[_cur["phase"]]),
                     _cur["sched"], _cur["phase"], _cur["ep_in"]-1,
                     _cur["global"]-1, best_val, best_ep, history, all_names)
-        log("  [SAVE-URGENCE] checkpoint sauvegardé ✓", "WARN")
+        log("  [EMERGENCY-SAVE] checkpoint saved", "WARN")
 
     global _save_fn; _save_fn = _emergency
 
@@ -873,7 +873,7 @@ def main():
             prog = (step-warmup)/max(total-warmup,1)
             return max(0.01, 0.5*(1+math.cos(math.pi*prog)))
         sched = optim.lr_scheduler.LambdaLR(opt, _lr)
-        # Avancer le scheduler si on reprend en milieu de phase
+        # Advance the scheduler if resuming mid-phase
         for _ in range(ep_done): sched.step()
         return sched
 
@@ -881,7 +881,7 @@ def main():
     live_state = {}
     console    = Console() if RICH else None
 
-    proto_matrix_np = None   # sera rempli après la première validation complète
+    proto_matrix_np = None   # will be filled after the first full validation
 
     for phase_idx in range(start_phase, len(PHASES)):
         pc         = PHASES[phase_idx]
@@ -898,23 +898,23 @@ def main():
         sched = _mk_sched(opt, pc, start_ep_i)
         _cur["opt"] = opt; _cur["sched"] = sched
 
-        # Restore optimizer si reprise dans cette phase
+        # Restore optimizer if resuming in this phase
         if phase_idx == start_phase and RESUME_PT.exists() and start_ep_in > 0:
             ck2 = torch.load(str(RESUME_PT), map_location="cpu", weights_only=False)
             try:
                 opt.load_state_dict(ck2["optimizer_state"])
                 if ck2.get("scheduler_state") and sched:
                     sched.load_state_dict(ck2["scheduler_state"])
-                log("  Optimizer/scheduler restaurés")
+                log("  Optimizer/scheduler restored")
             except Exception as e:
-                log(f"  [WARN] Restauration optimizer échouée ({e}) — reparti de zéro", "WARN")
+                log(f"  [WARN] Optimizer restore failed ({e}), restarted from scratch", "WARN")
 
         live_ctx = Live(console=console, refresh_per_second=4) if RICH else None
         if live_ctx:
             live_ctx.start()
             live_ctx.update(make_rich_table(live_state, pc, global_ep, best_ep, best_val))
 
-        # Refresh callback — update à chaque batch (pas seulement fin d'epoch)
+        # Refresh callback - update on each batch (not only at epoch end)
         _best_val_box  = [best_val]
         _best_ep_box   = [best_ep]
         _global_ep_box = [global_ep]
@@ -971,7 +971,7 @@ def main():
             acc_c, acc_d = validate(backbone, zoo_tr_p, zoo_tr_l,
                                      zoo_va_p, zoo_va_l, n_zoo, emb_dim)
             bos_disc = bos_discrimination(backbone, bos_p, bos_l_flat, n_zoo)
-            # Score composite : zoo propre + zoo dégradé + discrimination BOS
+            # Composite score: clean zoo + degraded zoo + BOS discrimination
             composite = 0.35*acc_c + 0.40*acc_d + 0.25*min(max(bos_disc+0.1,0),1)
 
             is_best = composite > best_val
@@ -990,18 +990,18 @@ def main():
                 "composite": composite, "is_best": is_best,
             })
 
-            # Sauvegarde après chaque epoch (crash-safe)
+            # Save after each epoch (crash-safe)
             save_resume(backbone, arc_loss, opt, sched,
                         phase_idx, ep, global_ep, best_val, best_ep, history, all_names)
 
-            # Rich display — le live display se met à jour en continu via refresh_fn
-            # On force un update final à la fin de l'epoch pour afficher les métriques de val
+            # Rich display - the live display updates continuously via refresh_fn
+            # We force a final update at the end of the epoch to show the val metrics
             if RICH and live_ctx:
                 live_ctx.update(make_rich_table(live_state, pc, global_ep, best_ep, best_val))
             else:
                 star = " *" if is_best else ""
                 log(f"  Ep {global_ep:3d} | L={l_arc:.3f}+{l_inv:.3f}+{l_bos:.3f} "
-                    f"| zoo={acc_c*100:.1f}%/dég={acc_d*100:.1f}% "
+                    f"| zoo={acc_c*100:.1f}%/deg={acc_d*100:.1f}% "
                     f"| bos={bos_disc:.3f} | composite={composite:.4f}{star} "
                     f"| {ep_time:.0f}s")
 
@@ -1010,7 +1010,7 @@ def main():
                 if not is_best:
                     patience_c += 1
                     if patience_c >= pc["patience"]:
-                        log(f"  Early stopping à l'epoch {global_ep}"); break
+                        log(f"  Early stopping at epoch {global_ep}"); break
                 else:
                     patience_c = 0
 
@@ -1022,7 +1022,7 @@ def main():
     if BEST_PT.exists():
         best_ck = torch.load(str(BEST_PT), map_location=DEVICE, weights_only=False)
         backbone.load_state_dict(best_ck["backbone_state"])
-        log(f"  Meilleur modèle chargé — epoch {best_ck['epoch']} "
+        log(f"  Best model loaded - epoch {best_ck['epoch']} "
             f"score {best_ck['val_composite']:.4f}")
 
     opt_t, gap, proto_matrix_np = build_gallery(
@@ -1046,22 +1046,22 @@ def main():
 
     section("DONE")
     log(f"""
-  Score composite meilleur : {best_val:.4f}  (epoch {best_ep})
-  Séparabilité gap         : {gap:.4f}
-  Seuil galerie            : {opt_t:.4f}
-  Individus                : {n_known}  ({n_zoo} zoo + {len(bos_names)} BOS)
-  Durée totale             : {total_time/60:.1f} min
+  Best composite score     : {best_val:.4f}  (epoch {best_ep})
+  Separability gap         : {gap:.4f}
+  Gallery threshold        : {opt_t:.4f}
+  Individuals              : {n_known}  ({n_zoo} zoo + {len(bos_names)} BOS)
+  Total duration           : {total_time/60:.1f} min
 
-  Sorties dans {OUT} :
-    Backbone seul  : {BACKBONE_PT.name}
-    Modèle complet : {BEST_PT.name}
-    Galerie        : {GALLERY_JS.name}
-    Rapport        : {REPORT_JS.name}
-    Courbes        : {CURVES_PNG.name}
+  Outputs in {OUT} :
+    Backbone only  : {BACKBONE_PT.name}
+    Full model     : {BEST_PT.name}
+    Gallery        : {GALLERY_JS.name}
+    Report         : {REPORT_JS.name}
+    Curves         : {CURVES_PNG.name}
     Log            : {LOG_FILE.name}
 
-  Prochaine étape :
-    Exporter backbone TFLite, puis swap Android
+  Next step :
+    Export the backbone to TFLite, then swap on Android
 """)
     _log_fh.close()
 

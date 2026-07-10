@@ -2,19 +2,19 @@
 V6_1_extract_crops.py — OrangIdentifier V6
 ===========================================
 Étape 1 : Extraction des crops des 5 nouveaux individus zoo
-           via YOLOv2 + analyse qualité par crop (luminosité + netteté).
+           via YOLOv2 + per-crop quality analysis (brightness + sharpness).
 
 Source   : data/photos\\<Individu>\\*.jpg
 Sorties  : data/crops/new\\<Individu>\\*.jpg
            output/v6/quality_report.json
            output/v6/results\\01_quality_histograms.png
 
-Métrique qualité (calculée sur le crop 224×224, pas sur l'image brute) :
+Quality metric (computed on the 224x224 crop, not the raw image):
   - brightness : moyenne pixel niveaux de gris ∈ [0, 1]
-  - sharpness  : variance du Laplacien (flou → faible, net → élevé)
-  - yolo_conf  : confiance YOLO de la détection
+  - sharpness  : Laplacian variance (blurry -> low, sharp -> high)
+  - yolo_conf  : YOLO confidence of the detection
 
-Aucune image n'est rejetée automatiquement.
+No image is rejected automatically.
 Les seuils sont indicatifs — lancer V6_2_review_quality.py pour filtrer.
 
 RUN :
@@ -55,14 +55,14 @@ RESULTS.mkdir(parents=True, exist_ok=True)
 # ══════════════════════════════════════════════════════════════════════════════
 CROP_SIZE   = 224
 MARGIN      = 0.05       # marge bbox en fraction de la largeur/hauteur
-CONF_THRESH = 0.25       # seuil de confiance YOLO
+CONF_THRESH = 0.25       # YOLO confidence threshold
 IOU_THRESH  = 0.45
 IMG_EXTS    = {".jpg", ".jpeg", ".png", ".JPG", ".JPEG", ".PNG"}
-SAVE_EVERY  = 50         # sauvegarde JSON tous les N images
+SAVE_EVERY  = 50         # save JSON every N images
 
-# Seuils indicatifs (pour les flags — aucun rejet automatique)
-FLAG_DARK   = 0.20       # brightness < 0.20 → flag sombre
-FLAG_BLUR   = 80.0       # sharpness < 80   → flag flou
+# Indicative thresholds (for flags, no automatic rejection)
+FLAG_DARK   = 0.20       # brightness < 0.20 -> dark flag
+FLAG_BLUR   = 80.0       # sharpness < 80   -> blurry flag
 
 # ══════════════════════════════════════════════════════════════════════════════
 # UTILITAIRES JSON
@@ -79,7 +79,7 @@ def load_json(path):
             try:
                 with open(bak, encoding="utf-8") as f:
                     data = json.load(f)
-                print("  [WARN] JSON corrompu — chargement depuis backup")
+                print("  [WARN] JSON corrupted, loading from backup")
                 return data
             except Exception:
                 pass
@@ -95,7 +95,7 @@ def save_json(data, path):
             shutil.copy2(path, bak)
         tmp.replace(path)
     except Exception as e:
-        print(f"  [ERROR] Sauvegarde JSON échouée : {e}")
+        print(f"  [ERROR] JSON save failed : {e}")
         if tmp.exists():
             try: tmp.unlink()
             except: pass
@@ -119,7 +119,7 @@ def extract_crop(img_bgr, x1r, y1r, x2r, y2r):
     return cv2.resize(crop, (CROP_SIZE, CROP_SIZE), interpolation=cv2.INTER_LANCZOS4)
 
 def quality_metrics(crop_bgr):
-    """Calcule luminosité et netteté sur le crop 224×224."""
+    """Compute brightness and sharpness on the 224x224 crop."""
     gray = cv2.cvtColor(crop_bgr, cv2.COLOR_BGR2GRAY)  # uint8 — Laplacian CV_64F OK
     brightness = float(gray.mean() / 255.0)
     sharpness  = float(cv2.Laplacian(gray, cv2.CV_64F).var())
@@ -129,14 +129,14 @@ def quality_metrics(crop_bgr):
 # HISTOGRAMMES
 # ══════════════════════════════════════════════════════════════════════════════
 def plot_quality_histograms(db, out_path):
-    """Génère des histogrammes luminosité + netteté par individu."""
+    """Generate brightness + sharpness histograms per individual."""
     individuals = sorted(set(v["individu"] for v in db.values() if v.get("statut") in ("ok", "multi")))
     if not individuals:
         return
 
     n = len(individuals)
     fig, axes = plt.subplots(n, 2, figsize=(14, 4 * n))
-    fig.suptitle("V6 — Qualité des crops par individu", fontsize=13, y=1.01)
+    fig.suptitle("V6 - Crop quality per individual", fontsize=13, y=1.01)
     if n == 1:
         axes = [axes]
 
@@ -149,24 +149,24 @@ def plot_quality_histograms(db, out_path):
         brightnesses = [v["brightness"] for v in entries]
         sharpnesses  = [v["sharpness"]  for v in entries]
 
-        # — Luminosité —
+        # - Brightness -
         ax_row[0].hist(brightnesses, bins=30, color=color, alpha=0.80, edgecolor="white")
         ax_row[0].axvline(FLAG_DARK, color="red", lw=2, linestyle="--",
-                          label=f"Seuil sombre ({FLAG_DARK:.2f})")
+                          label=f"Dark threshold ({FLAG_DARK:.2f})")
         pct_dark = sum(b < FLAG_DARK for b in brightnesses) / max(len(brightnesses), 1) * 100
-        ax_row[0].set_title(f"{ind} — Luminosité  ({pct_dark:.0f}% trop sombres)", fontsize=10)
-        ax_row[0].set_xlabel("Luminosité moyenne crop [0–1]")
+        ax_row[0].set_title(f"{ind} - Brightness  ({pct_dark:.0f}% too dark)", fontsize=10)
+        ax_row[0].set_xlabel("Mean crop brightness [0-1]")
         ax_row[0].set_ylabel("Nb crops")
         ax_row[0].set_xlim(0, 1)
         ax_row[0].legend(fontsize=8)
         ax_row[0].grid(alpha=0.3)
 
-        # — Netteté —
+        # - Sharpness -
         ax_row[1].hist(sharpnesses, bins=30, color=color, alpha=0.80, edgecolor="white")
         ax_row[1].axvline(FLAG_BLUR, color="orange", lw=2, linestyle="--",
-                          label=f"Seuil flou ({FLAG_BLUR:.0f})")
+                          label=f"Blur threshold ({FLAG_BLUR:.0f})")
         pct_blur = sum(s < FLAG_BLUR for s in sharpnesses) / max(len(sharpnesses), 1) * 100
-        ax_row[1].set_title(f"{ind} — Netteté (variance Laplacien)  ({pct_blur:.0f}% flous)", fontsize=10)
+        ax_row[1].set_title(f"{ind} - Sharpness (Laplacian variance)  ({pct_blur:.0f}% blurry)", fontsize=10)
         ax_row[1].set_xlabel("Variance Laplacien")
         ax_row[1].set_ylabel("Nb crops")
         ax_row[1].set_xlim(left=0)
@@ -183,30 +183,30 @@ def plot_quality_histograms(db, out_path):
 # ══════════════════════════════════════════════════════════════════════════════
 def main():
     print("=" * 70)
-    print("  V6_1_extract_crops.py — Extraction + Analyse qualité")
+    print("  V6_1_extract_crops.py - Extraction + quality analysis")
     print(f"  {datetime.now():%Y-%m-%d %H:%M}")
     print("=" * 70)
 
     if not INPUT_DIR.exists():
-        print(f"  [ERROR] Dossier introuvable : {INPUT_DIR}"); return
+        print(f"  [ERROR] Folder not found : {INPUT_DIR}"); return
     if not YOLO_MODEL.exists():
-        print(f"  [ERROR] YOLO introuvable : {YOLO_MODEL}"); return
+        print(f"  [ERROR] YOLO not found : {YOLO_MODEL}"); return
 
-    # ── Découverte des individus ───────────────────────────────────────────────
+    # ── Discovery of individuals ───────────────────────────────────────────────
     individuals = sorted([d.name for d in INPUT_DIR.iterdir() if d.is_dir()])
     if not individuals:
-        print(f"  [ERROR] Aucun sous-dossier dans {INPUT_DIR}"); return
+        print(f"  [ERROR] No subfolder in {INPUT_DIR}"); return
 
-    print(f"\n  {len(individuals)} individus trouvés :")
+    print(f"\n  {len(individuals)} individuals found :")
     for name in individuals:
         imgs = [f for f in (INPUT_DIR / name).iterdir() if f.suffix in IMG_EXTS]
         print(f"    {name:<14}: {len(imgs):4d} photos")
         (OUTPUT_DIR / name).mkdir(parents=True, exist_ok=True)
 
-    # ── Reprise (skip déjà traités) ───────────────────────────────────────────
+    # ── Resume (skip already processed) ───────────────────────────────────────────
     db = load_json(JSON_PATH)
     already_done = set(db.keys())
-    print(f"\n  Déjà traités : {len(already_done)} (seront ignorés)")
+    print(f"\n  Already processed : {len(already_done)} (will be skipped)")
 
     tasks = []
     for individu in individuals:
@@ -219,18 +219,18 @@ def main():
 
     print(f"  À traiter : {len(tasks)} images\n")
     if not tasks:
-        print("  Tout est déjà extrait. Génération des histogrammes...")
+        print("  Everything is already extracted. Generating histograms...")
         plot_quality_histograms(db, RESULTS / "01_quality_histograms.png")
         _print_summary(db, individuals)
         return
 
-    # ── Chargement YOLO ───────────────────────────────────────────────────────
-    print("  Chargement YOLO v2...")
+    # -- Loading YOLO ───────────────────────────────────────────────────────
+    print("  Loading YOLO v2...")
     import torch
     from ultralytics import YOLO
     device = "cuda" if torch.cuda.is_available() else "cpu"
     model  = YOLO(str(YOLO_MODEL))
-    print(f"  YOLO chargé sur {device}\n")
+    print(f"  YOLO loaded on {device}\n")
 
     n_ok = n_multi = n_no_det = n_dark = n_blur = n_error = 0
 
@@ -271,7 +271,7 @@ def main():
             bar.set_postfix({"ok": n_ok, "no_det": n_no_det, "err": n_error})
             continue
 
-        # Meilleure détection (plus grande confiance)
+        # Best detection (highest confidence)
         best_idx = int(detections.conf.argmax())
         x1r, y1r, x2r, y2r = detections[best_idx].xyxy[0].cpu().numpy()
         yolo_conf = float(detections[best_idx].conf[0].cpu().numpy())
@@ -285,12 +285,12 @@ def main():
 
         brightness, sharpness = quality_metrics(crop)
 
-        # Flags qualité (informatifs, pas de rejet)
+        # Quality flags (informative, no rejection)
         flags = []
         if brightness < FLAG_DARK:
-            flags.append("sombre"); n_dark += 1
+            flags.append("dark"); n_dark += 1
         if sharpness < FLAG_BLUR:
-            flags.append("flou");   n_blur += 1
+            flags.append("blurry");   n_blur += 1
 
         cv2.imwrite(str(crop_dst), crop, [cv2.IMWRITE_JPEG_QUALITY, 95])
 
@@ -314,7 +314,7 @@ def main():
         }
 
         bar.set_postfix({"ok": n_ok, "multi": n_multi,
-                          "no_det": n_no_det, "sombre": n_dark, "err": n_error})
+                          "no_det": n_no_det, "dark": n_dark, "err": n_error})
 
         if (i + 1) % SAVE_EVERY == 0:
             save_json(db, JSON_PATH)
@@ -322,19 +322,19 @@ def main():
     bar.close()
     save_json(db, JSON_PATH)
 
-    # ── Histogrammes qualité ──────────────────────────────────────────────────
+    # ── Quality histograms ──────────────────────────────────────────────────
     plot_quality_histograms(db, RESULTS / "01_quality_histograms.png")
 
-    # ── Résumé ────────────────────────────────────────────────────────────────
+    # -- Summary ────────────────────────────────────────────────────────────────
     _print_summary(db, individuals)
     print(f"""
 {'=' * 70}
   EXTRACTION TERMINÉE — {datetime.now():%Y-%m-%d %H:%M}
 {'=' * 70}
-  Total traité  : {len(tasks)}
+  Total processed  : {len(tasks)}
   Crops OK      : {n_ok}
-  Multi-visage  : {n_multi}   (meilleure face gardée)
-  Non détecté   : {n_no_det}
+  Multi-face    : {n_multi}   (best face kept)
+  Not detected  : {n_no_det}
   Flag sombre   : {n_dark}   (brightness < {FLAG_DARK})
   Flag flou     : {n_blur}    (sharpness  < {FLAG_BLUR})
   Erreurs       : {n_error}
@@ -349,14 +349,14 @@ def main():
 """)
 
 def _print_summary(db, individuals):
-    print(f"\n  {'Individu':<14} {'Crops OK':>9} {'No det':>7} {'Sombres':>8} {'Flous':>6}")
+    print(f"\n  {'Individual':<14} {'Crops OK':>9} {'No det':>7} {'Dark':>8} {'Blurry':>6}")
     print(f"  {'─'*50}")
     for ind in individuals:
         entries = [v for v in db.values() if v.get("individu") == ind]
         n_ok_i    = sum(1 for v in entries if v.get("statut") in ("ok", "multi"))
         n_nodet_i = sum(1 for v in entries if v.get("statut") == "no_detection")
-        n_dark_i  = sum(1 for v in entries if "sombre" in v.get("flags", []))
-        n_blur_i  = sum(1 for v in entries if "flou"   in v.get("flags", []))
+        n_dark_i  = sum(1 for v in entries if "dark" in v.get("flags", []))
+        n_blur_i  = sum(1 for v in entries if "blurry" in v.get("flags", []))
         warn = " !" if n_dark_i / max(n_ok_i, 1) > 0.5 else ""
         print(f"  {ind:<14} {n_ok_i:>9} {n_nodet_i:>7} {n_dark_i:>8} {n_blur_i:>6}{warn}")
     print()

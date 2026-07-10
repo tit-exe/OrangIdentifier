@@ -1,25 +1,25 @@
 """
 V6_3_train.py — OrangIdentifier V6
 ====================================
-Étape 3 : Entraînement ZOO-UNIQUEMENT (pas de BOS).
+Step 3: ZOO-ONLY training (no BOS).
 
   - Individus zoo existants : v1/data/crops_dataset/raw  (excl. _a_verifier)
   - Nouveaux individus zoo  : v6/data/new_zoo_crops      (excl. dossiers _*)
-  - Wild (régularisation)   : v3/data/wild_crops
-  - Backbone de départ      : V3 (zoo-only, cohérent avec l'objectif)
-  - Techniques V5 conservées : SubCenterArcFace, curriculum 4 phases,
+  - Wild (regularisation)   : v3/data/wild_crops
+  - Starting backbone       : V3 (zoo-only, consistent with the objective)
+  - V5 techniques kept       : SubCenterArcFace, 4-phase curriculum,
     L_invariance, hard mining wild, crash-safety
-  - Bugs V5 corrigés : scheduler (double-step), hard mining (proto_matrix),
+  - V5 bugs fixed : scheduler (double-step), hard mining (proto_matrix),
     WildDataset._resample (replace=True)
 
 Architecture :
   MegaDescriptor-T-224 + SubCenterArcFace (K_ZOO=2, K_WILD=5)
   4 phases de curriculum progressif
-  L_arcface + L_invariance (robustesse dégradations)
-  Crash-safe : checkpoint après chaque epoch
+  L_arcface + L_invariance (robustness to degradations)
+  Crash-safe : checkpoint after each epoch
 
 CRASH-SAFETY :
-  Fermer la fenêtre = relancer = reprend exactement où ça s'était arrêté.
+  Closing the window = relaunch = resumes exactly where it stopped.
 
 RUN :
     conda activate orangs
@@ -75,13 +75,13 @@ DRY  = ARGS.dry_run
 # ══════════════════════════════════════════════════════════════════════════════
 # CHEMINS
 # ══════════════════════════════════════════════════════════════════════════════
-# Backbone de départ : V3 (zoo-only — cohérent avec l'objectif V6)
-# ArcFace sera réinitialisé (nouvelles classes → poids incompatibles)
+# Starting backbone : V3 (zoo-only, consistent with the V6 objective)
+# ArcFace will be reinitialised (new classes -> incompatible weights)
 V3_CKPT   = (REPO / "models" / "megadesc_T_arcface_final_epoch21_acc99.pt")
 
 ZOO_DIR   = (REPO / "data" / "crops" / "known")   # individus zoo existants
 NEW_ZOO   = (REPO / "data" / "crops" / "new")        # nouveaux individus zoo
-WILD_DIR  = (REPO / "data" / "crops" / "wild")            # crops sauvages (régularisation)
+WILD_DIR  = (REPO / "data" / "crops" / "wild")            # wild crops (regularisation)
 
 V6_BASE   = (REPO / "output" / "v6")
 MODELS    = V6_BASE / "models";  MODELS.mkdir(parents=True, exist_ok=True)
@@ -108,8 +108,8 @@ EXTS       = {".jpg", ".jpeg", ".png", ".JPG", ".JPEG", ".PNG"}
 
 ARC_SCALE  = 64
 ARC_MARGIN = 0.35
-K_ZOO      = 2    # sous-centres par individu zoo (intra-class variation)
-K_WILD     = 5    # sous-centres pour la classe "inconnu"
+K_ZOO      = 2    # sub-centers per zoo individual (intra-class variation)
+K_WILD     = 5    # sub-centers for the "unknown" class
 
 # Galerie
 K_EXEMPLARS_ZOO = 25
@@ -122,7 +122,7 @@ random.seed(SEED); np.random.seed(SEED); torch.manual_seed(SEED)
 if torch.cuda.is_available(): torch.cuda.manual_seed_all(SEED)
 
 # ══════════════════════════════════════════════════════════════════════════════
-# 4 PHASES (identiques à V5)
+# 4 PHASES (identical to V5)
 # ══════════════════════════════════════════════════════════════════════════════
 PHASES = [
     dict(name="Phase 0 — Initialisation", epochs=3 if not DRY else 1,
@@ -170,12 +170,12 @@ _save_fn   = None
 def _emergency_save():
     if _save_fn is not None:
         try: _save_fn(reason="interrupt")
-        except Exception as e: log(f"Emergency save échouée : {e}", "ERROR")
+        except Exception as e: log(f"Emergency save failed : {e}", "ERROR")
 
 def _sigint(sig, frame):
     global _interrupt
     if not _interrupt:
-        log("[Ctrl+C] Arrêt propre après le batch courant...", "WARN")
+        log("[Ctrl+C] Clean stop after the current batch...", "WARN")
         _interrupt = True
     else:
         _emergency_save(); _log_fh.close(); sys.exit(1)
@@ -187,12 +187,12 @@ if _IS_MAIN:
         import win32api
         def _win32_handler(ct):
             if ct in (2, 5, 6):
-                log(f"[Win32 CTRL={ct}] Fermeture — sauvegarde urgence...", "WARN")
+                log(f"[Win32 CTRL={ct}] Closing, emergency save...", "WARN")
                 global _interrupt; _interrupt = True
                 _emergency_save(); time.sleep(1)
             return False
         win32api.SetConsoleCtrlHandler(_win32_handler, True)
-        log("Handler Win32 installé")
+        log("Win32 handler installed")
     except ImportError:
         log("pywin32 absent — checkpoint par epoch uniquement", "WARN")
 
@@ -333,9 +333,9 @@ class WildDataset(Dataset):
     def _resample(self, n, weights=None):
         n = min(n, len(self.all))
         if weights is not None and len(weights) == len(self.all):
-            # replace=True obligatoire : seuls ~512 items ont poids > 0,
-            # et n peut être 1200-1500 → replace=False lèverait ValueError.
-            # Sémantiquement correct : on veut sur-échantillonner les hard negatives.
+            # replace=True required: only ~512 items have weight > 0,
+            # and n can be 1200-1500 -> replace=False would raise ValueError.
+            # Semantically correct: we want to oversample the hard negatives.
             idx = np.random.choice(len(self.all), n, replace=True, p=weights)
             self.files = [self.all[i] for i in idx]
         else:
@@ -347,10 +347,10 @@ class WildDataset(Dataset):
         return get_clean_tf()(img), get_degraded_tf(1.0)(img), self.lbl
 
 # ══════════════════════════════════════════════════════════════════════════════
-# CHARGEMENT DONNÉES — fusion ZOO + NEW_ZOO triés alphabétiquement
+# DATA LOADING - merge ZOO + NEW_ZOO sorted alphabetically
 # ══════════════════════════════════════════════════════════════════════════════
 def load_zoo_merged(zoo_dirs, offset=0, exclude=None):
-    """Charge plusieurs dossiers zoo, fusionne et trie les individus par nom."""
+    """Loads several zoo folders, merges and sorts the individuals by name."""
     excl = set(exclude or [])
     all_ind_dirs = []
     for base in zoo_dirs:
@@ -360,7 +360,7 @@ def load_zoo_merged(zoo_dirs, offset=0, exclude=None):
             if d.is_dir() and not d.name.startswith("_") and d.name not in excl:
                 all_ind_dirs.append(d)
 
-    # Tri alphabétique par nom d'individu (reproductible)
+    # Alphabetical sort by individual name (reproducible)
     all_ind_dirs.sort(key=lambda d: d.name.lower())
 
     paths, labels, names = [], [], []
@@ -388,7 +388,7 @@ def load_dir(base, offset=0, exclude=None):
 def load_backbone():
     bb = timm.create_model("hf-hub:BVRA/MegaDescriptor-T-224", pretrained=False, num_classes=0)
 
-    # Priorité : V3 (zoo-only — cohérent avec l'objectif V6 sans BOS)
+    # Priority : V3 (zoo-only, consistent with the V6 objective without BOS)
     if V3_CKPT.exists():
         ck    = torch.load(str(V3_CKPT), map_location="cpu", weights_only=False)
         state = ck.get("backbone_state") or ck.get("model_state_dict") or ck
@@ -397,7 +397,7 @@ def load_backbone():
         src = "V3"
     else:
         bb  = timm.create_model("hf-hub:BVRA/MegaDescriptor-T-224", pretrained=True, num_classes=0)
-        log("  Backbone HuggingFace (V3 introuvable)", "WARN")
+        log("  HuggingFace backbone (V3 not found)", "WARN")
         src = "HuggingFace"
 
     with torch.no_grad():
@@ -406,7 +406,7 @@ def load_backbone():
     return bb, emb_dim, src
 
 # ══════════════════════════════════════════════════════════════════════════════
-# ENTRAÎNEMENT
+# TRAINING
 # ══════════════════════════════════════════════════════════════════════════════
 def train_epoch(bb, arc, loaders, opt, sched, pc, n_zoo, live_state, refresh_fn=None):
     bb.train(); arc.train()
@@ -492,7 +492,7 @@ def bos_discrimination(bb, bos_p, bos_l, n_zoo):
 
 @torch.no_grad()
 def build_proto_np(bb, paths, labels, n_cls, emb_dim):
-    """Matrice de centroïdes par classe (float32 numpy) — pour hard mining wild."""
+    """Per-class centroid matrix (float32 numpy), for wild hard mining."""
     bb.eval()
     proto = np.zeros((n_cls, emb_dim), dtype=np.float32)
     cnt   = np.zeros(n_cls)
@@ -558,7 +558,7 @@ def save_best(bb, arc, classes, emb_dim, ep, val, src):
 # ══════════════════════════════════════════════════════════════════════════════
 @torch.no_grad()
 def build_gallery(bb, all_paths, all_labels, all_names, n_zoo, emb_dim):
-    section("Construction de la galerie (exemplaires filtrés qualité)")
+    section("Building the gallery (quality-filtered exemplars)")
     bb.eval()
     ds = PlainDataset(all_paths, all_labels)
     dl = DataLoader(ds, 64, num_workers=0)
@@ -573,7 +573,7 @@ def build_gallery(bb, all_paths, all_labels, all_names, n_zoo, emb_dim):
     individuals  = {}
     all_exemplars = {}   # name → (K, emb_dim) — construit en passe 1
 
-    # ── Passe 1 : exemplaires + métadonnées ───────────────────────────────────
+    # ── Pass 1: exemplars + metadata ───────────────────────────────────
     for i, name in enumerate(all_names):
         mask     = labs == i; ei = embs[mask]
         if len(ei) == 0: log(f"  [WARN] {name}: 0 crops", "WARN"); continue
@@ -605,8 +605,8 @@ def build_gallery(bb, all_paths, all_labels, all_names, n_zoo, emb_dim):
         }
         log(f"  [{tag}] {name:<14}: {len(ei):3d} crops → {len(best):2d} exemplaires")
 
-    # ── Passe 2 : calibration seuil avec scoring max-over-exemplaires ─────────
-    # Même logique que l'app : score = max(dot(query, exemplaire))
+    # -- Pass 2: threshold calibration with max-over-exemplars scoring ─────────
+    # Same logic as the app: score = max(dot(query, exemplar))
     pos_sims = []; neg_sims = []
     name_list = list(all_exemplars.keys())
     for i, name in enumerate(all_names):
@@ -618,7 +618,7 @@ def build_gallery(bb, all_paths, all_labels, all_names, n_zoo, emb_dim):
         # Positifs : max sim sur ses propres exemplaires
         pos_sims.extend((ei @ own_ex.T).max(1).tolist())
 
-        # Négatifs : max sim sur les exemplaires de tous les autres individus
+        # Negatives: max sim over the exemplars of all other individuals
         other_ex_list = [v for k2, v in all_exemplars.items() if k2 != name]
         if other_ex_list:
             other_ex = np.vstack(other_ex_list)
@@ -636,7 +636,7 @@ def build_gallery(bb, all_paths, all_labels, all_names, n_zoo, emb_dim):
         p  = tp/(tp+fp+1e-9); r = tp/(tp+fn+1e-9)
         f1s.append(2*p*r/(p+r+1e-9))
     opt_t = float(thresholds[np.argmax(f1s)])
-    log(f"  Seuil optimal : {opt_t:.4f}  (F1={max(f1s):.4f})")
+    log(f"  Optimal threshold : {opt_t:.4f}  (F1={max(f1s):.4f})")
 
     gallery = {
         "version": "v6", "created": datetime.now().isoformat(),
@@ -666,8 +666,8 @@ def make_rich_panel(state, pc, global_ep, best_ep, best_score):
     t.add_row("L_arcface",      f"{state.get('l_arc',0):.4f}")
     t.add_row("L_inv",          f"{state.get('l_inv',0):.4f}  (lam={pc['lam_inv']:.2f})")
     t.add_row("─"*20,           "─"*30)
-    t.add_row("Zoo propre",     f"{state.get('acc_c',0)*100:.2f}%")
-    t.add_row("Zoo dégradé",    f"{state.get('acc_d',0)*100:.2f}%")
+    t.add_row("Zoo clean",     f"{state.get('acc_c',0)*100:.2f}%")
+    t.add_row("Zoo degraded",    f"{state.get('acc_d',0)*100:.2f}%")
     t.add_row("Composite",      f"{state.get('composite',0):.4f}" + (" * BEST" if state.get("is_best") else ""))
     t.add_row("─"*20,           "─"*30)
     t.add_row("LR backbone",    f"{pc['lr_bb']:.1e}")
@@ -678,7 +678,7 @@ def make_rich_panel(state, pc, global_ep, best_ep, best_score):
         t.add_row("GPU VRAM",   f"{used:.1f}/{tot:.1f} GB")
     t.add_row("ETA batch",      str(timedelta(seconds=state.get("eta_batch", 0))))
     t.add_row("ETA total",      str(timedelta(seconds=state.get("eta_total", 0))))
-    t.add_row("Meilleur",       f"epoch {best_ep}  score {best_score:.4f}")
+    t.add_row("Best",       f"epoch {best_ep}  score {best_score:.4f}")
     return Panel(t, title="[bold green]OrangIdentifier V6[/bold green]", border_style="green")
 
 # ══════════════════════════════════════════════════════════════════════════════
@@ -690,7 +690,7 @@ def run_benchmark(bb, zoo_va_p, zoo_va_l, zoo_names, gallery_data, threshold, em
     section("Benchmark V6 (val-set zoo — scoring max-over-exemplaires)")
     bb.eval()
 
-    # Embeddings requêtes
+    # Query embeddings
     ds = PlainDataset(zoo_va_p, zoo_va_l)
     dl = DataLoader(ds, 64, num_workers=0)
     q_embs, q_labs = [], []
@@ -700,7 +700,7 @@ def run_benchmark(bb, zoo_va_p, zoo_va_l, zoo_names, gallery_data, threshold, em
     q_embs = np.concatenate(q_embs).astype(np.float32)
     q_labs = np.array(q_labs)
 
-    # Matrices d'exemplaires par classe (depuis la galerie construite)
+    # Per-class exemplar matrices (from the built gallery)
     class_exemplars = {}
     for info in gallery_data["individuals"].values():
         ci = info["class_index"]
@@ -734,12 +734,12 @@ def run_benchmark(bb, zoo_va_p, zoo_va_l, zoo_names, gallery_data, threshold, em
         wild_max_scores = (w_embs @ all_ex.T).max(1)
         fp_rate = float((wild_max_scores >= threshold).mean())
 
-    # Résumé terminal
+    # Terminal summary
     log(f"\n  Accuracy zoo (val) : {accuracy*100:.2f}%")
     log(f"  Confiance moyenne  : {own_scores.mean():.4f}  (min {own_scores.min():.4f})")
-    log(f"  Seuil galerie      : {threshold:.4f}")
+    log(f"  Gallery threshold  : {threshold:.4f}")
     if not math.isnan(fp_rate):
-        log(f"  Wild FP rate       : {fp_rate*100:.2f}%  (≤5% recommandé)")
+        log(f"  Wild FP rate       : {fp_rate*100:.2f}%  (<=5% recommended)")
     log("")
     log(f"  {'Individu':<14} {'N req':>6} {'Acc':>7} {'Conf µ':>8} {'Conf min':>9}")
     log(f"  {'─'*50}")
@@ -774,7 +774,7 @@ def make_plots(history, best_ep=None):
         return
     xs = list(range(1, n + 1))
 
-    # Délimiteurs de phases (fin de chaque phase sauf la dernière)
+    # Phase delimiters (end of each phase except the last)
     bdry = []
     cum  = 0
     for p in PHASES[:-1]:
@@ -792,12 +792,12 @@ def make_plots(history, best_ep=None):
             ax.axvline(b + 0.5, color="#666", lw=1.0, ls="--", alpha=0.6)
         if best_ep and 1 <= best_ep <= n:
             ax.axvline(best_ep, color="#facc15", lw=1.5, ls=":", alpha=0.9,
-                       label=f"* meilleur ep.{best_ep}")
+                       label=f"* best ep.{best_ep}")
         ax.legend(fontsize=9)
 
     fig, axes = plt.subplots(2, 2, figsize=(14, 10))
-    fig.suptitle("OrangIdentifier V6 — Courbes d'entraînement (Zoo uniquement)\n"
-                 "(tirets gris = séparations de phases · pointillé jaune = meilleur epoch)",
+    fig.suptitle("OrangIdentifier V6 - Training curves (Zoo only)\n"
+                 "(grey dashes = phase separations, yellow dotted = best epoch)",
                  fontsize=13)
 
     axes[0, 0].plot(xs, history["l_arc"], color="#e74c3c", lw=1.5, label="L_arcface")
@@ -807,9 +807,9 @@ def make_plots(history, best_ep=None):
     _fmt(axes[0, 1], "Loss Invariance")
 
     axes[1, 0].plot(xs, [v*100 for v in history["acc_clean"]],
-                    color="#2ecc71", lw=1.5, label="Zoo propre")
+                    color="#2ecc71", lw=1.5, label="Zoo clean")
     axes[1, 0].plot(xs, [v*100 for v in history["acc_deg"]],
-                    color="#f39c12", lw=1.5, label="Zoo dégradé")
+                    color="#f39c12", lw=1.5, label="Zoo degraded")
     axes[1, 0].set_ylim(0, 105)
     _fmt(axes[1, 0], "Accuracy zoo (validation)", ylabel="%")
 
@@ -817,7 +817,7 @@ def make_plots(history, best_ep=None):
     if best_ep and 1 <= best_ep <= n:
         bv = history["composite"][best_ep - 1]
         axes[1, 1].scatter([best_ep], [bv], color="#facc15", s=90, zorder=5)
-    _fmt(axes[1, 1], "Score composite (0.45·acc_propre + 0.55·acc_dégradé)")
+    _fmt(axes[1, 1], "Composite score (0.45*acc_clean + 0.55*acc_degraded)")
 
     plt.tight_layout()
     plt.savefig(CURVES_PNG, dpi=150, bbox_inches="tight")
@@ -832,8 +832,8 @@ def main():
     section(f"V6 TRAIN {'[DRY RUN] ' if DRY else ''}— {datetime.now():%Y-%m-%d %H:%M}")
     log(f"  Device : {DEVICE}")
 
-    # ── Données ───────────────────────────────────────────────────────────────
-    section("Chargement des données")
+    # ── Data ───────────────────────────────────────────────────────────────
+    section("Loading data")
     zoo_p, zoo_l, zoo_names = load_zoo_merged(
         [ZOO_DIR, NEW_ZOO], offset=0, exclude=["_a_verifier"]
     )
@@ -843,7 +843,7 @@ def main():
 
     all_names   = zoo_names
     n_known     = n_zoo
-    unknown_l   = n_zoo    # classe wild = index juste après les zoo
+    unknown_l   = n_zoo    # wild class = index right after the zoo
     all_known_p = zoo_p
     all_known_l = zoo_l
 
@@ -858,7 +858,7 @@ def main():
         tr_idx, va_idx = train_test_split(
             idx, test_size=VAL_RATIO, stratify=zoo_l, random_state=SEED)
     except ValueError:
-        log("  [WARN] Stratify impossible (individu avec < 2 crops) — split aléatoire", "WARN")
+        log("  [WARN] Stratify impossible (individual with < 2 crops), random split", "WARN")
         tr_idx, va_idx = train_test_split(idx, test_size=VAL_RATIO, random_state=SEED)
     zoo_tr_p = [zoo_p[i] for i in tr_idx]; zoo_tr_l = [zoo_l[i] for i in tr_idx]
     zoo_va_p = [zoo_p[i] for i in va_idx]; zoo_va_l = [zoo_l[i] for i in va_idx]
@@ -872,26 +872,26 @@ def main():
     arc_loss    = SubCenterArcFace(emb_dim, n_zoo+1, k_per_class,
                                    ARC_SCALE, ARC_MARGIN).to(DEVICE)
     log(f"  ArcFace : {n_zoo} zoo + 1 wild = {n_zoo+1} classes")
-    log(f"  Sous-centres : zoo×{K_ZOO} + wild×{K_WILD}")
+    log(f"  Sub-centers : zoo×{K_ZOO} + wild×{K_WILD}")
 
-    # ── Reprise checkpoint ────────────────────────────────────────────────────
+    # -- Resume checkpoint ────────────────────────────────────────────────────
     start_phase = 0; start_ep_in = 0; global_ep = 0
     best_val = -999.0; best_ep = 0
     history = {"l_arc":[],"l_inv":[],"acc_clean":[],"acc_deg":[],"composite":[]}
 
     if RESUME_PT.exists():
-        section("Reprise depuis checkpoint")
+        section("Resume from checkpoint")
         ck = torch.load(str(RESUME_PT), map_location=DEVICE, weights_only=False)
         backbone.load_state_dict(ck["backbone_state"])
         arc_loss.load_state_dict(ck["arc_loss_state"])
         start_phase = ck["phase_idx"]; start_ep_in = ck["ep_in_phase"] + 1
         global_ep   = ck["global_ep"]; best_val = ck["best_val"]; best_ep = ck["best_ep"]
         history     = ck.get("history", history)
-        log(f"  Reprise phase {start_phase}, epoch {start_ep_in}, meilleur={best_val:.4f}")
+        log(f"  Resume phase {start_phase}, epoch {start_ep_in}, best={best_val:.4f}")
         if start_ep_in >= PHASES[start_phase]["epochs"]:
             start_phase += 1; start_ep_in = 0
             if start_phase >= len(PHASES):
-                log("  Toutes les phases terminées — galerie uniquement")
+                log("  All phases finished, gallery only")
                 backbone.load_state_dict(
                     torch.load(str(BEST_PT), map_location=DEVICE, weights_only=False)["backbone_state"])
                 build_gallery(backbone, all_known_p, all_known_l, all_names, n_zoo, emb_dim)
@@ -902,7 +902,7 @@ def main():
             "phase": start_phase, "ep_in": start_ep_in, "global": global_ep}
 
     def _emergency(reason="interrupt"):
-        log(f"  [SAVE-URGENCE] phase={_cur['phase']} ep={_cur['ep_in']}", "WARN")
+        log(f"  [EMERGENCY-SAVE] phase={_cur['phase']} ep={_cur['ep_in']}", "WARN")
         opt_  = _cur["opt"] or _mk_opt(PHASES[_cur["phase"]])
         save_resume(_cur["bb"], _cur["arc"], opt_, _cur["sched"],
                     _cur["phase"], _cur["ep_in"]-1, _cur["global"]-1,
@@ -945,9 +945,9 @@ def main():
                 opt.load_state_dict(ck2["optimizer_state"])
                 if ck2.get("scheduler_state") and sched:
                     sched.load_state_dict(ck2["scheduler_state"])
-                log("  Optimizer/scheduler restaurés")
+                log("  Optimizer/scheduler restored")
             except Exception as e:
-                log(f"  Optimizer reparti de zéro ({e})", "WARN")
+                log(f"  Optimizer restarted from scratch ({e})", "WARN")
 
         live_ctx = Live(console=_console, refresh_per_second=4) if RICH else None
         if live_ctx: live_ctx.start()
@@ -990,7 +990,7 @@ def main():
 
             acc_c, acc_d = validate(backbone, zoo_tr_p, zoo_tr_l,
                                      zoo_va_p, zoo_va_l, n_zoo, emb_dim)
-            # Mise à jour des centroïdes pour le hard mining wild de la prochaine epoch.
+            # Update centroids for the wild hard mining of the next epoch.
             if phase_idx >= WILD_HARD_MINING_FROM_PHASE:
                 proto_matrix_np = build_proto_np(
                     backbone, zoo_tr_p, zoo_tr_l, n_zoo, emb_dim)
@@ -1013,7 +1013,7 @@ def main():
 
             star = " *" if is_best else ""
             log(f"  Ep {global_ep:3d} | arc={l_arc:.3f} inv={l_inv:.3f} "
-                f"| zoo={acc_c*100:.1f}%/dég={acc_d*100:.1f}% "
+                f"| zoo={acc_c*100:.1f}%/deg={acc_d*100:.1f}% "
                 f"| composite={composite:.4f}{star}")
             if RICH and live_ctx:
                 live_ctx.update(make_rich_panel(live_state, pc, global_ep, best_ep, best_val))
@@ -1034,7 +1034,7 @@ def main():
     if BEST_PT.exists():
         ck = torch.load(str(BEST_PT), map_location=DEVICE, weights_only=False)
         backbone.load_state_dict(ck["backbone_state"])
-        log(f"  Meilleur chargé — epoch {ck['epoch']} score {ck['val_composite']:.4f}")
+        log(f"  Best loaded - epoch {ck['epoch']} score {ck['val_composite']:.4f}")
 
     opt_t, gap, proto_matrix_np = build_gallery(
         backbone, all_known_p, all_known_l, all_names, n_zoo, emb_dim)
@@ -1065,12 +1065,12 @@ def main():
     section("DONE")
     log(f"""
   Score composite meilleur : {best_val:.4f}  (epoch {best_ep})
-  Séparabilité gap         : {gap:.4f}
+  Separability gap         : {gap:.4f}
   Seuil galerie            : {opt_t:.4f}
   Individus zoo            : {n_zoo}
-  Durée totale             : {total_time/60:.1f} min
+  Total duration           : {total_time/60:.1f} min
 
-  Modèle   : {BEST_PT.name}
+  Model    : {BEST_PT.name}
   Galerie  : {GALLERY_JS.name}
   Rapport  : {REPORT_JS.name}
   Courbes  : {CURVES_PNG.name}
