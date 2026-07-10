@@ -89,6 +89,18 @@ if errors:
 # ==============================================================================
 hr("Loading the new brain")
 
+# -- Dependency guard: on a missing package, show the exact install command -----
+import importlib.util as _ilu
+_missing = [m for m in ("torch", "timm") if _ilu.find_spec(m) is None]
+if _missing:
+    log("Missing Python package(s): " + ", ".join(_missing), "STOP")
+    log("This script runs inside WSL, in the 'orangs_export' environment.")
+    log("Easiest fix: re-run maintenance/00_first_time_setup/setup_wsl.ps1")
+    log("Or install by hand inside WSL:")
+    log("  conda run -n orangs_export pip install torch torchvision --index-url https://download.pytorch.org/whl/cpu")
+    log("  conda run -n orangs_export pip install timm litert-torch pillow numpy huggingface_hub")
+    sys.exit(1)
+
 import torch
 import timm
 

@@ -44,6 +44,18 @@ from pathlib import Path
 from datetime import datetime, timedelta
 from collections import Counter
 
+# -- Dependency guard: on a missing package, show the exact install command -----
+import importlib.util as _ilu
+_missing = [m for m in ("numpy", "torch", "timm", "PIL", "matplotlib") if _ilu.find_spec(m) is None]
+if _missing:
+    print("\n[STOP] Missing Python package(s): " + ", ".join(_missing))
+    print("Install everything in the 'orangs' environment (Anaconda Prompt):\n")
+    print("  conda activate orangs")
+    print("  pip install torch==2.4.1+cu124 torchvision==0.19.1+cu124 --index-url https://download.pytorch.org/whl/cu124")
+    print("  pip install timm==0.9.16 ultralytics==8.2.0 opencv-python==4.9.0.80 Pillow==10.3.0 numpy==1.26.4 scikit-learn==1.4.2 huggingface_hub==0.23.2 matplotlib==3.9.0 tqdm==4.66.4 rich pywin32")
+    print("\nFull guide: maintenance/00_first_time_setup/1_install_training_tools.md")
+    raise SystemExit(1)
+
 import numpy as np
 import torch
 import torch.nn as nn
